@@ -1,3 +1,4 @@
+#coding=utf8
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -55,12 +56,12 @@ class rnn_encoder(nn.Module):
         outputs, (h, c) = self.rnn(embs)
         outputs = unpack(outputs)[0]
         if not self.config.bidirec:
-            return outputs, (h, c)
+            return outputs, (h, c) #h,c是最后一个step的，大小是(num_layers * num_directions, batch, hidden_size)
         else:
             batch_size = h.size(1)
             h = h.transpose(0, 1).contiguous().view(batch_size, -1, 2 * self.config.encoder_hidden_size)
             c = c.transpose(0, 1).contiguous().view(batch_size, -1, 2 * self.config.encoder_hidden_size)
-            state = (h.transpose(0, 1), c.transpose(0, 1))
+            state = (h.transpose(0, 1), c.transpose(0, 1)) #每一个元素是 (num_layers,batch,2*hidden_size)这么大。
             return outputs, state
 
 
