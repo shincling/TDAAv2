@@ -1,3 +1,4 @@
+#coding=utf8
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
@@ -16,7 +17,7 @@ class global_attention(nn.Module):
         self.activation = activation
 
     def forward(self, x, context):
-        gamma_h = self.linear_in(x).unsqueeze(2)    # batch * size * 1
+        gamma_h = self.linear_in(x).unsqueeze(2) # unsequeee这个函数相当于直接reshape多出来一维度，值得学习。   # batch * size * 1
         if self.activation == 'tanh':
             gamma_h = self.tanh(gamma_h)
         weights = torch.bmm(context, gamma_h).squeeze(2)   # batch * time
