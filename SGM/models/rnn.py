@@ -124,9 +124,9 @@ class rnn_decoder(nn.Module):
 
     def forward(self, inputs, init_state, contexts):
         if not self.config.global_emb:
-            embs = self.embedding(inputs)
+            embs = self.embedding(inputs) #如果不用global_emb，那么就直接一个简单的emb给下一个step.
             outputs, state, attns = [], init_state, []
-            for emb in embs.split(1):
+            for emb in embs.split(1): # 这个循环应该是针对训练集当中的n的（目标标签数目）
                 output, state = self.rnn(emb.squeeze(0), state)
                 output, attn_weights = self.attention(output, contexts)
                 output = self.dropout(output)

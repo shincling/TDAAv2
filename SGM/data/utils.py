@@ -45,7 +45,8 @@ def logging(file):
 
 def logging_csv(file):
     def write_csv(s):
-        with open(file, 'a', newline='') as f:
+        # with open(file, 'a', newline='') as f:
+        with open(file, 'a') as f:
             writer = csv.writer(f)
             writer.writerow(s)
     return write_csv
