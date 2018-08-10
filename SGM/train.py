@@ -121,7 +121,7 @@ else:
     log_path = config.log + opt.log + '/'
 if not os.path.exists(log_path):
     os.mkdir(log_path)
-logging = utils.logging(log_path+'log.txt') 
+logging = utils.logging(log_path+'log.txt') # 这种方式也值得学习，单独写一个logging的函数，直接调用，既print，又记录到Log文件里。
 logging_csv = utils.logging_csv(log_path+'record.csv') 
 for k, v in config.items():
     logging("%s:\t%s\n" % (str(k), str(v)))

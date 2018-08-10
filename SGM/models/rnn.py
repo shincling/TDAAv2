@@ -33,7 +33,7 @@ class StackedLSTM(nn.Module):
             h_1 += [h_1_i]
             c_1 += [c_1_i]
 
-        h_1 = torch.stack(h_1)
+        h_1 = torch.stack(h_1) #把多层的LSTMCell模型的输出给组织起来了，的到了[num_layers,batch_size,hidden_size]的东西
         c_1 = torch.stack(c_1)
 
         return input, (h_1, c_1)
@@ -126,7 +126,7 @@ class rnn_decoder(nn.Module):
         if not self.config.global_emb:
             embs = self.embedding(inputs) #如果不用global_emb，那么就直接一个简单的emb给下一个step.
             outputs, state, attns = [], init_state, []
-            for emb in embs.split(1): # 这个循环应该是针对训练集当中的n的（目标标签数目）
+            for emb in embs.split(1): # 对于每个step的target词语, 这个循环应该是针对训练集当中的n的（目标标签数目）,就是把第一个排列成一个tuple(也就是这个batch里label最多的那个的label数目）
                 output, state = self.rnn(emb.squeeze(0), state)
                 output, attn_weights = self.attention(output, contexts)
                 output = self.dropout(output)
