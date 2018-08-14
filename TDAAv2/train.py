@@ -174,10 +174,11 @@ def train(epoch):
         if train_data==False:
             break #如果这个epoch的生成器没有数据了，直接进入下一个epoch
 
-        src = Variable(train_data['mix_feas'])
-        tgt = Variable(tgt)
-        src_len = Variable(src_len).unsqueeze(0)
-        tgt_len = Variable(tgt_len).unsqueeze(0)
+        src = Variable(torch.from_numpy(train_data['mix_feas']))
+        raw_tgt = [spk.keys() for spk in train_data['multi_spk_fea_list']]
+        tgt = [[0]+[dict_spk2idx[spk] for spk in spks]+[dict_spk2idx['<EOS>']] for spks in raw_tgt] #转换成数字，然后前后加开始和结束符号。
+        src_len = Variable(mix_speech_len).unsqueeze(0)
+        tgt_len = Variable(len(train_data['multi_spk_fea_list'][0])).unsqueeze(0)
         if use_cuda:
             src = src.cuda()
             tgt = tgt.cuda()

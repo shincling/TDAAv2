@@ -158,6 +158,7 @@ def prepare_data(mode,train_or_test,min=None,max=None):
 
                 multi_fea_dict_this_sample={}
                 multi_wav_dict_this_sample={}
+                multi_name_list_this_sample=[]
                 multi_db_dict_this_sample={}
 
                 # if 1 and config.dB and config.MIN_MIX==config.MAX_MIX==2:
@@ -211,7 +212,6 @@ def prepare_data(mode,train_or_test,min=None,max=None):
                         multi_fea_dict_this_sample[spk]=aim_fea_clean
                         multi_wav_dict_this_sample[spk]=signal
 
-                        #视频处理部分，为了得到query
                     else:
                         ratio=10**(aim_spk_db_k[k]/20.0)
                         signal=ratio*signal
@@ -256,6 +256,8 @@ def prepare_data(mode,train_or_test,min=None,max=None):
                     if mode=='global':
                         all_spk=sorted(all_spk)
                         all_spk=sorted(all_spk_train)
+                        all_spk.insert(0,'<BOS>') #添加两个结构符号，来标识开始或结束。
+                        all_spk.append('<EOS>')
                         all_spk_eval=sorted(all_spk_eval)
                         all_spk_test=sorted(all_spk_test)
                         dict_spk_to_idx={spk:idx for idx,spk in enumerate(all_spk)}

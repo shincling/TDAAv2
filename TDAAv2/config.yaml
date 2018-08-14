@@ -1,7 +1,7 @@
 data: './data/data/save_data'
 log: './data/data/log/'
 epoch: 50
-batch_size: 3
+batch_size: 11
 param_init: 0.1
 optim: 'adam'
 learning_rate: 0.001
@@ -24,3 +24,5 @@ max_generator_batches: 32
 metric: ['hamming_loss', 'micro_f1']
 shared_vocab: False
 beam_size: 5
+min_mix: 2
+max_mix: 3
