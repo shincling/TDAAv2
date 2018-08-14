@@ -10,6 +10,7 @@ import data.utils as utils
 import data.dict as dict
 from optims import Optim
 import lr_scheduler as L
+from predata_fromList_123 import prepare_data,prepare_datasize
 
 import os
 import argparse
@@ -71,6 +72,13 @@ print('loading data...\n')
 start_time = time.time()
 datas = torch.load(config.data)
 print('loading time cost: %.3f' % (time.time()-start_time))
+
+spk_global_gen=prepare_data(mode='global',train_or_test='train') #写一个假的数据生成，可以用来写模型先
+global_para=spk_global_gen.next()
+print global_para
+spk_all_list,dict_spk2idx,dict_idx2spk,mix_speech_len,speech_fre,total_frames,spk_num_total,batch_total=global_para
+del spk_global_gen
+num_labels=len(spk_all_list)
 
 trainset, validset = datas['train'], datas['valid']
 src_vocab, tgt_vocab = datas['dicts']['src'], datas['dicts']['tgt']
@@ -159,9 +167,14 @@ def train(epoch):
 
     global e, updates, total_loss, start_time, report_total
 
+    train_data_gen=prepare_data('once','train')
     for raw_src, src, src_len, raw_tgt, tgt, tgt_len in trainloader:
+    # while True:
+        train_data=train_data_gen.next()
+        if train_data==False:
+            break #如果这个epoch的生成器没有数据了，直接进入下一个epoch
 
-        src = Variable(src)
+        src = Variable(train_data['mix_feas'])
         tgt = Variable(tgt)
         src_len = Variable(src_len).unsqueeze(0)
         tgt_len = Variable(tgt_len).unsqueeze(0)
