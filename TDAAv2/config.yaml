@@ -18,7 +18,7 @@ decoder_hidden_size: 512
 num_layers: 2
 dropout: 0.5
 max_tgt_len: 25
-eval_interval: 100
+eval_interval: 20
 save_interval: 3000
 max_generator_batches: 32
 metric: ['hamming_loss', 'micro_f1']

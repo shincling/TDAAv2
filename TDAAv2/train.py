@@ -97,7 +97,7 @@ else:
 # model
 print('building model...\n')
 # 这个用法有意思，实际是 调了model.seq2seq 并且运行了最后这个括号里的五个参数的方法。(初始化了一个对象也就是）
-model = getattr(models, opt.model)(config, speech_fre,src_vocab.size(), tgt_vocab.size(), use_cuda,
+model = getattr(models, opt.model)(config, speech_fre,src_vocab.size(), num_labels, use_cuda,
                        pretrain=pretrain_embed, score_fn=opt.score)
 
 if opt.restore:
@@ -169,8 +169,8 @@ def train(epoch):
     global e, updates, total_loss, start_time, report_total
 
     train_data_gen=prepare_data('once','train')
-    for raw_src, src, src_len, raw_tgt, tgt, tgt_len in trainloader:
-    # while True:
+    # for raw_src, src, src_len, raw_tgt, tgt, tgt_len in trainloader:
+    while True:
         train_data=train_data_gen.next()
         if train_data==False:
             break #如果这个epoch的生成器没有数据了，直接进入下一个epoch
@@ -191,6 +191,7 @@ def train(epoch):
         model.zero_grad()
         outputs, targets = model(src, src_len, tgt, tgt_len)
         loss, num_total, _, _, _ = model.compute_loss(outputs, targets, opt.memory)
+        print 'loss this batch/target:',loss/num_total
 
         total_loss += loss
         report_total += num_total
