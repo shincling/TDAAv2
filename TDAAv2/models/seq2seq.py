@@ -36,11 +36,11 @@ class seq2seq(nn.Module):
         else:
             return models.cross_entropy_loss(hidden_outputs, self.decoder, targets, self.criterion, self.config)
 
-    def forward(self, src, src_len, tgt, tgt_len):
+    def forward(self, src, src_len, tgt, tgt_len,emb_size):
         # 感觉这是个把一个batch里的数据按从长到短调整顺序的意思
         lengths, indices = torch.sort(src_len.squeeze(0), dim=0, descending=True)
-        src = torch.index_select(src, dim=1, index=indices)
-        tgt = torch.index_select(tgt, dim=1, index=indices)
+        src = torch.index_select(src, dim=0, index=indices)
+        tgt = torch.index_select(tgt, dim=0, index=indices)
 
         contexts, state = self.encoder(src, lengths.data.tolist()) # context是：（max_len,batch_size,hidden_size×2方向）这么大
         outputs, final_state = self.decoder(tgt[:-1], state, contexts.transpose(0, 1))

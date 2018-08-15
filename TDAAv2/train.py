@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 import torch.utils.data
+import numpy as np
 
 import models
 import data.dataloader as dataloader
@@ -175,10 +176,11 @@ def train(epoch):
             break #如果这个epoch的生成器没有数据了，直接进入下一个epoch
 
         src = Variable(torch.from_numpy(train_data['mix_feas']))
+        # raw_tgt = Variable(torch.from_numpy(np.array([spk.keys() for spk in train_data['multi_spk_fea_list']])))
         raw_tgt = [spk.keys() for spk in train_data['multi_spk_fea_list']]
-        tgt = [[0]+[dict_spk2idx[spk] for spk in spks]+[dict_spk2idx['<EOS>']] for spks in raw_tgt] #转换成数字，然后前后加开始和结束符号。
-        src_len = Variable(mix_speech_len).unsqueeze(0)
-        tgt_len = Variable(len(train_data['multi_spk_fea_list'][0])).unsqueeze(0)
+        tgt = Variable(torch.from_numpy(np.array([[0]+[dict_spk2idx[spk] for spk in spks]+[dict_spk2idx['<EOS>']] for spks in raw_tgt],dtype=np.int))).transpose(0,1) #转换成数字，然后前后加开始和结束符号。
+        src_len = Variable(torch.ones(config.batch_size)*mix_speech_len).unsqueeze(0)
+        tgt_len = Variable(torch.ones(config.batch_size)*len(train_data['multi_spk_fea_list'][0])).unsqueeze(0)
         if use_cuda:
             src = src.cuda()
             tgt = tgt.cuda()
@@ -186,7 +188,7 @@ def train(epoch):
             tgt_len = tgt_len.cuda()
 
         model.zero_grad()
-        outputs, targets = model(src, src_len, tgt, tgt_len)
+        outputs, targets = model(src, src_len, tgt, tgt_len, speech_fre)
         loss, num_total, _, _, _ = model.compute_loss(outputs, targets, opt.memory)
 
         total_loss += loss
