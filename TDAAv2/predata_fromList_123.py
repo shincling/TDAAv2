@@ -1,20 +1,34 @@
 #coding=utf8
-import sys
 import os
 import numpy as np
-import time
 import random
-import config_WSJ0_dB as config
 import re
 import soundfile as sf
 import resampy
 import librosa
-import shutil
-import subprocess
+import argparse
+import data.utils as utils
+
+# Add the config.
+parser = argparse.ArgumentParser(description='predata scripts.')
+parser.add_argument('-config', default='config.yaml', type=str,
+                    help="config file")
+opt = parser.parse_args()
+config = utils.read_config(opt.config)
 
 channel_first=config.channel_first
 np.random.seed(1)#设定种子
 random.seed(1)
+
+aim_path='/home/sw/Shin/Codes/DL4SS_Keras/Torch_multi/Dataset_Multi/1/'+config.DATASET
+# 训练文件列表
+TRAIN_LIST = aim_path+'/train_list'
+# 验证文件列表
+VALID_LIST = aim_path+'/valid_list'
+# 测试文件列表
+TEST_LIST = aim_path+'/test_list'
+# 未登录文件列表
+UNK_LIST = aim_path+'/unk_list'
 
 def split_forTrainDevTest(spk_list,train_or_test):
     '''为了保证一个统一的训练和测试的划分标准，不得不用通用的一些方法来限定一下,
@@ -56,18 +70,18 @@ def prepare_data(mode,train_or_test,min=None,max=None):
     if max:
         config.MAX_MIX=max
 
-    mix_speechs=np.zeros((config.BATCH_SIZE,config.MAX_LEN))
+    mix_speechs=np.zeros((config.batch_size,config.MAX_LEN))
     mix_feas=[]#应该是bs,n_frames,n_fre这么多
     mix_phase=[]#应该是bs,n_frames,n_fre这么多
     aim_fea=[]#应该是bs,n_frames,n_fre这么多
-    aim_spkid=[] #np.zeros(config.BATCH_SIZE)
-    aim_spkname=[] #np.zeros(config.BATCH_SIZE)
-    query=[]#应该是BATCH_SIZE，shape(query)的形式，用list再转换把
+    aim_spkid=[] #np.zeros(config.batch_size)
+    aim_spkname=[] #np.zeros(config.batch_size)
+    query=[]#应该是batch_size，shape(query)的形式，用list再转换把
     multi_spk_fea_list=[] #应该是bs个dict，每个dict里是说话人name为key，clean_fea为value的字典
     multi_spk_wav_list=[] #应该是bs个dict，每个dict里是说话人name为key，clean_fea为value的字典
 
     #目标数据集的总data，底下应该存放分目录的文件夹，每个文件夹应该名字是sX
-    data_path=config.aim_path+'/data'
+    data_path=aim_path+'/data'
     #语音刺激
     if config.MODE==1:
         if config.DATASET=='WSJ0': #开始构建数据集
@@ -97,7 +111,7 @@ def prepare_data(mode,train_or_test,min=None,max=None):
 
                 all_samples_list[mix_k]=open(aim_list_path).readlines()#[:31]
                 number_samples[mix_k]=len(all_samples_list[mix_k])
-                batch_mix[mix_k]=len(all_samples_list[mix_k])/config.BATCH_SIZE
+                batch_mix[mix_k]=len(all_samples_list[mix_k])/config.batch_size
                 number_samples_all+=len(all_samples_list[mix_k])
 
                 sample_idx[mix_k]=0#每个通道从0开始计数
@@ -106,7 +120,7 @@ def prepare_data(mode,train_or_test,min=None,max=None):
                     random.shuffle(all_samples_list[mix_k])
                     print '\nshuffle success!',all_samples_list[mix_k][0]
 
-            batch_total=number_samples_all/config.BATCH_SIZE
+            batch_total=number_samples_all/config.batch_size
             print 'batch_total_num:',batch_total
 
             mix_k=random.sample(mix_number_list,1)[0]
@@ -117,7 +131,7 @@ def prepare_data(mode,train_or_test,min=None,max=None):
                     yield False
                 mix_len=0
                 print mix_k,'mixed sample_idx[mix_k]:',sample_idx[mix_k],batch_idx
-                if sample_idx[mix_k]>=batch_mix[mix_k]*config.BATCH_SIZE:
+                if sample_idx[mix_k]>=batch_mix[mix_k]*config.batch_size:
                     print mix_k,'mixed data is over~trun to the others number.'
                     mix_number_list.remove(mix_k)
                     try:
@@ -133,7 +147,7 @@ def prepare_data(mode,train_or_test,min=None,max=None):
 
                 all_over=1 #用来判断所有的是不是都结束了
                 for kkkkk in mix_number_list:
-                    if not sample_idx[kkkkk]>=batch_mix[mix_k]*config.BATCH_SIZE:
+                    if not sample_idx[kkkkk]>=batch_mix[mix_k]*config.batch_size:
                         print kkkkk,'mixed data is not over'
                         all_over=0
                         break
@@ -240,8 +254,8 @@ def prepare_data(mode,train_or_test,min=None,max=None):
                 mix_phase.append(np.transpose(librosa.core.spectrum.stft(wav_mix, config.FRAME_LENGTH,
                                                                                      config.FRAME_SHIFT,)))
                 batch_idx+=1
-                # print 'batch_dix:{}/{},'.format(batch_idx,config.BATCH_SIZE),
-                if batch_idx==config.BATCH_SIZE: #填满了一个batch
+                # print 'batch_dix:{}/{},'.format(batch_idx,config.batch_size),
+                if batch_idx==config.batch_size: #填满了一个batch
                     #下一个batch的混合说话人个数， 先调整一下
                     mix_k=random.sample(mix_number_list,1)[0]
                     mix_feas=np.array(mix_feas)
@@ -279,13 +293,13 @@ def prepare_data(mode,train_or_test,min=None,max=None):
                                }
 
                     batch_idx=0
-                    mix_speechs=np.zeros((config.BATCH_SIZE,config.MAX_LEN))
+                    mix_speechs=np.zeros((config.batch_size,config.MAX_LEN))
                     mix_feas=[]#应该是bs,n_frames,n_fre这么多
                     mix_phase=[]
                     aim_fea=[]#应该是bs,n_frames,n_fre这么多
-                    aim_spkid=[] #np.zeros(config.BATCH_SIZE)
+                    aim_spkid=[] #np.zeros(config.batch_size)
                     aim_spkname=[]
-                    query=[]#应该是BATCH_SIZE，shape(query)的形式，用list再转换把
+                    query=[]#应该是batch_size，shape(query)的形式，用list再转换把
                     multi_spk_fea_list=[]
                     multi_spk_wav_list=[]
                 sample_idx[mix_k]+=1

@@ -1,28 +1,100 @@
-data: './data/data/save_data'
-log: './data/data/log/'
-epoch: 50
-batch_size: 11
-param_init: 0.1
-optim: 'adam'
-learning_rate: 0.001
-max_grad_norm: 10
-learning_rate_decay: 0.5
-global_emb: False
-mask: True
-schedule: True
-bidirec: True
-start_decay_at: 5
-emb_size: 256
-encoder_hidden_size: 256
-decoder_hidden_size: 512
-num_layers: 2
-dropout: 0.5
-max_tgt_len: 25
-eval_interval: 20
-save_interval: 3000
-max_generator_batches: 32
-metric: ['hamming_loss', 'micro_f1']
-shared_vocab: False
-beam_size: 5
-min_mix: 2
-max_mix: 3
+data:  './data/data/save_data'
+log:  './data/data/log/'
+epoch:  50
+batch_size:  11
+BATCH_SIZE:  11
+param_init:  0.1
+optim:  'adam'
+learning_rate:  0.001
+max_grad_norm:  10
+learning_rate_decay:  0.5
+global_emb:  0
+mask:  1
+schedule:  1
+bidirec:  1
+start_decay_at:  5
+emb_size:  256
+encoder_hidden_size:  256
+decoder_hidden_size:  512
+num_layers:  2
+dropout:  0.5
+max_tgt_len:  25
+eval_interval:  20
+save_interval:  3000
+max_generator_batches:  32
+metric:  ['hamming_loss', 'micro_f1']
+shared_vocab:  0
+beam_size:  5
+min_mix:  2
+max_mix:  3
+
+# mode: 1 纯净语音刺激, 2 图片刺激, 3 视频刺激, 4 top-down概念刺激
+MODE :  1
+# 数据集
+# 1包括：THCHS-30 或者 WSJ0, TIMIT做为模型调试
+# 2包括：ＭNIST
+# 3包括：AVA,GRID
+# 4包括：
+# DATASET :  'GRID'
+DATASET :  'WSJ0'
+#　组件
+is_ComlexMask :  1
+is_SelfTune :  1
+
+# 是否在训练阶段用Ground Truth的分类结果
+Ground_truth :  1
+#query是否经过memory的再次更新
+Comm_with_Memory: 1
+Comm_with_Memory: 0
+# DNN/RNN隐层的维度 hidden units
+HIDDEN_UNITS :  300
+# DNN/RNN层数
+NUM_LAYERS :  2
+# Embedding大小,主要是给语音第三维那部分的
+EMBEDDING_SIZE :  50
+# EMBEDDING_SIZE :  40
+# 是否丰富数据
+AUGMENT_DATA :  1
+# set the max epoch of training
+MAX_EPOCH :  600
+# epoch size
+EPOCH_SIZE :  300
+# feature frame rate
+FRAME_RATE :  8000
+# 帧时长(ms)
+# FRAME_LENGTH :  int(0.032 * FRAME_RATE)
+FRAME_LENGTH : 256
+# 帧移(ms)
+FRAME_SHIFT :  128
+# 是否shuffle_batch
+SHUFFLE_BATCH :  1
+# 设定最小混叠说话人数，Minimum number of mixed speakers for training
+MIN_MIX :  2
+# 设定最大混叠说话人数，Maximum number of mixed speakers for training
+MAX_MIX :  2
+# 设定speech multi acc的阈值alpha
+ALPHA :  0.5
+quchong_alpha: 1
+dB: 5
+# 设置训练/开发/验证模型的最大语音长度(秒)
+MAX_LEN :  5
+#MAX_LEN :  FRAME_RATE*MAX_LEN
+MAX_LEN :  40000
+# 帧长
+WINDOWS :  FRAME_LENGTH
+# 未登录说话人语音的最大额外条数
+UNK_SPK_SUPP :  3
+START_EALY_STOP :  0
+# 特征Spectral of Log Spectral
+IS_LOG_SPECTRAL :  0
+# DB_THRESHOLD :  40  # None
+# 添加背景噪音（Str）
+ADD_BGD_NOISE :  0
+BGD_NOISE_WAV :  0
+BGD_NOISE_FILE :  'Dataset_Multi/BGD_150203_010_STR.CH1.wav'
+Out_Sep_Result: 1
+
+VideoSize: (299,299)
+NUM_ALL_FRAMES: 25
+VIDEO_RATE: 10
+channel_first: 1
