@@ -43,16 +43,18 @@ class rnn_encoder(nn.Module):
 
     def __init__(self, config, vocab_size, embedding=None):
         super(rnn_encoder, self).__init__()
-        if embedding is not None:
-            self.embedding = embedding
-        else:
-            self.embedding = nn.Embedding(vocab_size, config.emb_size)
+        #### There is no embedding.
+        # if embedding is not None:
+        #     self.embedding = embedding
+        # else:
+        #     self.embedding = nn.Embedding(vocab_size, config.emb_size)
         self.rnn = nn.LSTM(input_size=config.emb_size, hidden_size=config.encoder_hidden_size,
                            num_layers=config.num_layers, dropout=config.dropout, bidirectional=config.bidirec)
         self.config = config
 
     def forward(self, input, lengths):
-        embs = pack(self.embedding(input), lengths)
+        input=input.transpose(0,1)
+        embs = pack(input, map(int,lengths)) #这里batch是第二个维度
         outputs, (h, c) = self.rnn(embs)
         outputs = unpack(outputs)[0]
         if not self.config.bidirec:
