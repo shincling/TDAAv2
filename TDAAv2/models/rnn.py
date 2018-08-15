@@ -41,14 +41,14 @@ class StackedLSTM(nn.Module):
 
 class rnn_encoder(nn.Module):
 
-    def __init__(self, config, vocab_size, embedding=None):
+    def __init__(self, config, input_emb_size, vocab_size, embedding=None):
         super(rnn_encoder, self).__init__()
         #### There is no embedding.
         # if embedding is not None:
         #     self.embedding = embedding
         # else:
         #     self.embedding = nn.Embedding(vocab_size, config.emb_size)
-        self.rnn = nn.LSTM(input_size=config.emb_size, hidden_size=config.encoder_hidden_size,
+        self.rnn = nn.LSTM(input_size=input_emb_size, hidden_size=config.encoder_hidden_size,
                            num_layers=config.num_layers, dropout=config.dropout, bidirectional=config.bidirec)
         self.config = config
 

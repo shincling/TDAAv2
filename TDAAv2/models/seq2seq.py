@@ -10,7 +10,7 @@ import numpy as np
 
 class seq2seq(nn.Module):
 
-    def __init__(self, config, src_vocab_size, tgt_vocab_size, use_cuda, pretrain=None, score_fn=None):
+    def __init__(self, config, input_emb_size, src_vocab_size, tgt_vocab_size, use_cuda, pretrain=None, score_fn=None):
         super(seq2seq, self).__init__()
         if pretrain is not None:
             src_embedding = pretrain['src_emb']
@@ -18,7 +18,7 @@ class seq2seq(nn.Module):
         else:
             src_embedding = None
             tgt_embedding = None
-        self.encoder = models.rnn_encoder(config, src_vocab_size, embedding=src_embedding)
+        self.encoder = models.rnn_encoder(config, input_emb_size, src_vocab_size, embedding=src_embedding)
         if config.shared_vocab == False:
             self.decoder = models.rnn_decoder(config, tgt_vocab_size, embedding=tgt_embedding, score_fn=score_fn)
         else:
@@ -36,11 +36,12 @@ class seq2seq(nn.Module):
         else:
             return models.cross_entropy_loss(hidden_outputs, self.decoder, targets, self.criterion, self.config)
 
-    def forward(self, src, src_len, tgt, tgt_len,emb_size):
+    def forward(self, src, src_len, tgt, tgt_len):
         # 感觉这是个把一个batch里的数据按从长到短调整顺序的意思
         lengths, indices = torch.sort(src_len.squeeze(0), dim=0, descending=True)
-        src = torch.index_select(src, dim=0, index=indices)
-        tgt = torch.index_select(tgt, dim=0, index=indices)
+        # todo: 这里只要一用排序，tgt那个就出问题，现在的长度都一样，所以没有排序也可以工作，这个得好好研究一下后面
+        # src = torch.index_select(src, dim=0, index=indices)
+        # tgt = torch.index_select(tgt, dim=0, index=indices)
 
         contexts, state = self.encoder(src, lengths.data.tolist()) # context是：（max_len,batch_size,hidden_size×2方向）这么大
         outputs, final_state = self.decoder(tgt[:-1], state, contexts.transpose(0, 1))

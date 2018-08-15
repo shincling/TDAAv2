@@ -97,7 +97,7 @@ else:
 # model
 print('building model...\n')
 # 这个用法有意思，实际是 调了model.seq2seq 并且运行了最后这个括号里的五个参数的方法。(初始化了一个对象也就是）
-model = getattr(models, opt.model)(config, src_vocab.size(), tgt_vocab.size(), use_cuda,
+model = getattr(models, opt.model)(config, speech_fre,src_vocab.size(), tgt_vocab.size(), use_cuda,
                        pretrain=pretrain_embed, score_fn=opt.score)
 
 if opt.restore:
@@ -178,9 +178,10 @@ def train(epoch):
         src = Variable(torch.from_numpy(train_data['mix_feas']))
         # raw_tgt = Variable(torch.from_numpy(np.array([spk.keys() for spk in train_data['multi_spk_fea_list']])))
         raw_tgt = [spk.keys() for spk in train_data['multi_spk_fea_list']]
+        # 要保证底下这几个都是longTensor(长整数）
         tgt = Variable(torch.from_numpy(np.array([[0]+[dict_spk2idx[spk] for spk in spks]+[dict_spk2idx['<EOS>']] for spks in raw_tgt],dtype=np.int))).transpose(0,1) #转换成数字，然后前后加开始和结束符号。
-        src_len = Variable(torch.ones(config.batch_size)*mix_speech_len).unsqueeze(0)
-        tgt_len = Variable(torch.ones(config.batch_size)*len(train_data['multi_spk_fea_list'][0])).unsqueeze(0)
+        src_len = Variable(torch.LongTensor(config.batch_size).zero_()+mix_speech_len).unsqueeze(0)
+        tgt_len = Variable(torch.LongTensor(config.batch_size).zero_()+len(train_data['multi_spk_fea_list'][0])).unsqueeze(0)
         if use_cuda:
             src = src.cuda()
             tgt = tgt.cuda()
@@ -188,7 +189,7 @@ def train(epoch):
             tgt_len = tgt_len.cuda()
 
         model.zero_grad()
-        outputs, targets = model(src, src_len, tgt, tgt_len, speech_fre)
+        outputs, targets = model(src, src_len, tgt, tgt_len)
         loss, num_total, _, _, _ = model.compute_loss(outputs, targets, opt.memory)
 
         total_loss += loss
