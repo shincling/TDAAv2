@@ -191,14 +191,16 @@ def train(epoch):
         model.zero_grad()
         outputs, targets = model(src, src_len, tgt, tgt_len)
         loss, num_total, _, _, _ = model.compute_loss(outputs, targets, opt.memory)
-        print 'loss this batch/target:',loss/num_total
+        if updates%30==0:
+            logging("time: %6.3f, epoch: %3d, updates: %8d, train loss this batch: %6.3f\n"
+                    % (time.time()-start_time, epoch, updates, loss / num_total))
 
         total_loss += loss
         report_total += num_total
         optim.step()
         updates += 1  
 
-        if updates % config.eval_interval == 0:
+        if 0 and updates % config.eval_interval == 0:
             logging("time: %6.3f, epoch: %3d, updates: %8d, train loss: %6.3f\n"
                     % (time.time()-start_time, epoch, updates, total_loss / report_total))
             print('evaluating after %d updates...\r' % updates)
