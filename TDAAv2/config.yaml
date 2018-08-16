@@ -2,7 +2,6 @@ data:  './data/data/save_data'
 log:  './data/data/log/'
 epoch:  50
 batch_size:  11
-BATCH_SIZE:  11
 param_init:  0.1
 optim:  'adam'
 learning_rate:  0.001

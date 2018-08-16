@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
-import data.dict as dict
+# import data.dict as dict
 import models
 
 import numpy as np
@@ -72,7 +72,7 @@ class seq2seq(nn.Module):
         return sample_ids.t(), alignments.t()
 
 
-    def beam_sample(self, src, src_len, beam_size = 1):
+    def beam_sample(self, src, src_len, dict_spk2idx, beam_size = 1):
 
         #beam_size = self.config.beam_size
         batch_size = src.size(0)
@@ -104,7 +104,7 @@ class seq2seq(nn.Module):
         contexts = rvar(contexts.data).transpose(0, 1)
         decState = (rvar(encState[0].data), rvar(encState[1].data))
         #decState.repeat_beam_size_times(beam_size)
-        beam = [models.Beam(beam_size, n_best=1,
+        beam = [models.Beam(beam_size, dict_spk2idx, n_best=1,
                           cuda=self.use_cuda)
                 for __ in range(batch_size)]
 

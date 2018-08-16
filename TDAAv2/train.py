@@ -226,7 +226,8 @@ def eval(epoch):
     reference, candidate, source, alignments = [], [], [], []
     eval_data_gen=prepare_data('once','valid')
     # for raw_src, src, src_len, raw_tgt, tgt, tgt_len in validloader:
-    while True:
+    # while True:
+    for ___ in range(10):
         eval_data=eval_data_gen.next()
         if eval_data==False:
             break #如果这个epoch的生成器没有数据了，直接进入下一个epoch
@@ -239,9 +240,9 @@ def eval(epoch):
         if len(opt.gpus) > 1:
             samples, alignment = model.module.sample(src, src_len)
         else:
-            samples, alignment = model.beam_sample(src, src_len, beam_size=config.beam_size)
+            samples, alignment = model.beam_sample(src, src_len, dict_spk2idx, beam_size=config.beam_size)
 
-        candidate += [tgt_vocab.convertToLabels(s, dict.EOS) for s in samples]
+        candidate += [convertToLabels(dict_idx2spk,s, dict_spk2idx['<EOS>']) for s in samples]
         # source += raw_src
         reference += raw_tgt
         alignments += [align for align in alignment]
@@ -263,7 +264,7 @@ def eval(epoch):
         candidate = cands
 
     score = {}
-    result = utils.eval_metrics(reference, candidate, label_dict, log_path)
+    result = utils.eval_metrics(reference, candidate,dict_spk2idx, log_path)
     logging_csv([e, updates, result['hamming_loss'], \
                 result['micro_f1'], result['micro_precision'], result['micro_recall']])
     print('hamming_loss: %.8f | micro_f1: %.4f'
@@ -272,6 +273,16 @@ def eval(epoch):
     score['micro_f1'] = result['micro_f1']
     return score
 
+# Convert `idx` to labels. If index `stop` is reached, convert it and return.
+def convertToLabels(dict, idx, stop):
+    labels = []
+
+    for i in idx:
+        if i == stop:
+            break
+        labels += [dict[i]]
+
+    return labels
 
 def save_model(path):
     global updates

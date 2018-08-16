@@ -1,9 +1,9 @@
 import torch
-import data.dict as dict
+# import data.dict_spk2idx[as dict
 
 class Beam(object):
-    def __init__(self, size, n_best=1, cuda=True):
-
+    def __init__(self, size, dict_spk2idx,n_best=1, cuda=True):
+        self.dict_spk2idx=dict_spk2idx
         self.size = size
         self.tt = torch.cuda if cuda else torch
 
@@ -16,11 +16,11 @@ class Beam(object):
 
         # The outputs at each time-step.
         self.nextYs = [self.tt.LongTensor(size)
-                       .fill_(dict.EOS)]
-        self.nextYs[0][0] = dict.BOS
+                       .fill_(dict_spk2idx['<EOS>'])]
+        self.nextYs[0][0] = dict_spk2idx['<BOS>']
 
         # Has EOS topped the beam yet.
-        self._eos = dict.EOS
+        self._eos = dict_spk2idx['<EOS>']
         self.eosTop = False
 
         # The attentions (matrix) for each time.
@@ -78,8 +78,8 @@ class Beam(object):
                 s = self.scores[i]
                 self.finished.append((s, len(self.nextYs) - 1, i))
 
-        # End condition is when top-of-beam is EOS and no global score.
-        if self.nextYs[-1][0] == dict.EOS:
+        # End condition is when top-of-beam is '<EOS>' and no global score.
+        if self.nextYs[-1][0] == self.dict_spk2idx['<EOS>']:
             # self.allScores.append(self.scores)
             self.eosTop = True
 
