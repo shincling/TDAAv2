@@ -28,7 +28,7 @@ parser.add_argument('-config', default='config.yaml', type=str,
                     help="config file")
 parser.add_argument('-gpus', default=[0], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
-parser.add_argument('-restore', default='', type=str,
+parser.add_argument('-restore', default='data/data/log/2018-08-15-17:53:44/checkpoint_first.pt', type=str,
                     help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
                     help="Random seed")
@@ -44,7 +44,7 @@ parser.add_argument('-limit', default=0, type=int,
                     help="data limit")
 parser.add_argument('-log', default='', type=str,
                     help="log directory")
-parser.add_argument('-unk', default=True, type=bool,
+parser.add_argument('-unk', default=False, type=bool,
                     help="replace unk")
 parser.add_argument('-memory', default=False, type=bool,
                     help="memory efficiency")
@@ -57,7 +57,7 @@ torch.manual_seed(opt.seed)
 
 # checkpoint
 if opt.restore: 
-    print('loading checkpoint...\n')
+    print('loading checkpoint...\n',opt.restore)
     checkpoints = torch.load(opt.restore)
 
 # cuda
@@ -200,7 +200,7 @@ def train(epoch):
         optim.step()
         updates += 1  
 
-        if 0 and updates % config.eval_interval == 0:
+        if 1 and updates % config.eval_interval == 1:
             logging("time: %6.3f, epoch: %3d, updates: %8d, train loss: %6.3f\n"
                     % (time.time()-start_time, epoch, updates, total_loss / report_total))
             print('evaluating after %d updates...\r' % updates)
@@ -224,14 +224,25 @@ def train(epoch):
 def eval(epoch):
     model.eval()
     reference, candidate, source, alignments = [], [], [], []
-    for raw_src, src, src_len, raw_tgt, tgt, tgt_len in validloader:
+    eval_data_gen=prepare_data('once','valid')
+    # for raw_src, src, src_len, raw_tgt, tgt, tgt_len in validloader:
+    while True:
+        eval_data=eval_data_gen.next()
+        if eval_data==False:
+            break #如果这个epoch的生成器没有数据了，直接进入下一个epoch
+        src = Variable(torch.from_numpy(eval_data['mix_feas']))
+        raw_tgt = [spk.keys() for spk in eval_data['multi_spk_fea_list']]
+        # 要保证底下这几个都是longTensor(长整数）
+        tgt = Variable(torch.from_numpy(np.array([[0]+[dict_spk2idx[spk] for spk in spks]+[dict_spk2idx['<EOS>']] for spks in raw_tgt],dtype=np.int))).transpose(0,1) #转换成数字，然后前后加开始和结束符号。
+        src_len = Variable(torch.LongTensor(config.batch_size).zero_()+mix_speech_len).unsqueeze(0)
+        tgt_len = Variable(torch.LongTensor(config.batch_size).zero_()+len(eval_data['multi_spk_fea_list'][0])).unsqueeze(0)
         if len(opt.gpus) > 1:
             samples, alignment = model.module.sample(src, src_len)
         else:
             samples, alignment = model.beam_sample(src, src_len, beam_size=config.beam_size)
 
         candidate += [tgt_vocab.convertToLabels(s, dict.EOS) for s in samples]
-        source += raw_src
+        # source += raw_src
         reference += raw_tgt
         alignments += [align for align in alignment]
 

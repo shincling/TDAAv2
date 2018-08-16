@@ -75,7 +75,7 @@ class seq2seq(nn.Module):
     def beam_sample(self, src, src_len, beam_size = 1):
 
         #beam_size = self.config.beam_size
-        batch_size = src.size(1)
+        batch_size = src.size(0)
 
         # (1) Run the encoder on the src. Done!!!!
         if self.use_cuda:
@@ -83,9 +83,9 @@ class seq2seq(nn.Module):
             src_len = src_len.cuda()
 
         lengths, indices = torch.sort(src_len, dim=0, descending=True)
-        _, ind = torch.sort(indices)
-        src = Variable(torch.index_select(src, dim=1, index=indices), volatile=True)
-        contexts, encState = self.encoder(src, lengths.tolist())
+        # _, ind = torch.sort(indices)
+        # src = Variable(torch.index_select(src, dim=1, index=indices), volatile=True)
+        contexts, encState = self.encoder(src, lengths.data.cpu().numpy()[0])
 
         #  (1b) Initialize for the decoder.
         def var(a):
@@ -147,6 +147,7 @@ class seq2seq(nn.Module):
         # (3) Package everything up.
         allHyps, allScores, allAttn = [], [], []
 
+        ind=range(batch_size)
         for j in ind:
             b = beam[j]
             n_best = 1
