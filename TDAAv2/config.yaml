@@ -24,9 +24,11 @@ max_generator_batches:  32
 metric:  ['hamming_loss', 'micro_f1']
 shared_vocab:  0
 beam_size:  5
-min_mix:  2
-max_mix:  3
 
+# 设定最小混叠说话人数，Minimum number of mixed speakers for training
+MIN_MIX :  2
+# 设定最大混叠说话人数，Maximum number of mixed speakers for training
+MAX_MIX :  3
 # mode: 1 纯净语音刺激, 2 图片刺激, 3 视频刺激, 4 top-down概念刺激
 MODE :  1
 # 数据集
@@ -67,10 +69,6 @@ FRAME_LENGTH : 256
 FRAME_SHIFT :  128
 # 是否shuffle_batch
 SHUFFLE_BATCH :  1
-# 设定最小混叠说话人数，Minimum number of mixed speakers for training
-MIN_MIX :  2
-# 设定最大混叠说话人数，Maximum number of mixed speakers for training
-MAX_MIX :  2
 # 设定speech multi acc的阈值alpha
 ALPHA :  0.5
 quchong_alpha: 1

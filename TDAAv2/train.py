@@ -200,7 +200,7 @@ def train(epoch):
         optim.step()
         updates += 1  
 
-        if 1 and updates % config.eval_interval == 1:
+        if 1 and updates % config.eval_interval == 0:
             logging("time: %6.3f, epoch: %3d, updates: %8d, train loss: %6.3f\n"
                     % (time.time()-start_time, epoch, updates, total_loss / report_total))
             print('evaluating after %d updates...\r' % updates)
@@ -226,8 +226,8 @@ def eval(epoch):
     reference, candidate, source, alignments = [], [], [], []
     eval_data_gen=prepare_data('once','valid')
     # for raw_src, src, src_len, raw_tgt, tgt, tgt_len in validloader:
-    # while True:
-    for ___ in range(10):
+    while True:
+    # for ___ in range(100):
         eval_data=eval_data_gen.next()
         if eval_data==False:
             break #如果这个epoch的生成器没有数据了，直接进入下一个epoch

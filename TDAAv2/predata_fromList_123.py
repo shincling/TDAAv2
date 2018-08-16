@@ -143,6 +143,15 @@ def prepare_data(mode,train_or_test,min=None,max=None):
                         yield False
                     # mix_k=random.sample(mix_number_list,1)[0]
                     batch_idx=0
+                    mix_speechs=np.zeros((config.batch_size,config.MAX_LEN))
+                    mix_feas=[]#应该是bs,n_frames,n_fre这么多
+                    mix_phase=[]
+                    aim_fea=[]#应该是bs,n_frames,n_fre这么多
+                    aim_spkid=[] #np.zeros(config.batch_size)
+                    aim_spkname=[]
+                    query=[]#应该是batch_size，shape(query)的形式，用list再转换把
+                    multi_spk_fea_list=[]
+                    multi_spk_wav_list=[]
                     continue
 
                 all_over=1 #用来判断所有的是不是都结束了
