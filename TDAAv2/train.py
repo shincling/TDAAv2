@@ -191,6 +191,7 @@ def train(epoch):
         model.zero_grad()
         outputs, targets = model(src, src_len, tgt, tgt_len)
         loss, num_total, _, _, _ = model.compute_loss(outputs, targets, opt.memory)
+        print 'loss,this batch:',loss/num_total
         if updates%30==0:
             logging("time: %6.3f, epoch: %3d, updates: %8d, train loss this batch: %6.3f\n"
                     % (time.time()-start_time, epoch, updates, loss / num_total))
@@ -198,7 +199,7 @@ def train(epoch):
         total_loss += loss
         report_total += num_total
         optim.step()
-        updates += 1  
+        updates += 1
 
         if 1 and updates % config.eval_interval == 0:
             logging("time: %6.3f, epoch: %3d, updates: %8d, train loss: %6.3f\n"
@@ -224,7 +225,7 @@ def train(epoch):
 def eval(epoch):
     model.eval()
     reference, candidate, source, alignments = [], [], [], []
-    eval_data_gen=prepare_data('once','valid')
+    eval_data_gen=prepare_data('once','valid',2,2)
     # for raw_src, src, src_len, raw_tgt, tgt, tgt_len in validloader:
     while True:
     # for ___ in range(100):
