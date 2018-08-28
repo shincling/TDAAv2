@@ -97,7 +97,7 @@ else:
 # model
 print('building model...\n')
 # 这个用法有意思，实际是 调了model.seq2seq 并且运行了最后这个括号里的五个参数的方法。(初始化了一个对象也就是）
-model = getattr(models, opt.model)(config, speech_fre,src_vocab.size(), num_labels, use_cuda,
+model = getattr(models, opt.model)(config, speech_fre, mix_speech_len, num_labels, use_cuda,
                        pretrain=pretrain_embed, score_fn=opt.score)
 
 if opt.restore:

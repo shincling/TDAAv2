@@ -193,29 +193,26 @@ class ADDJUST(nn.Module):
         return out
 
 class SS(nn.Module):
-    def __init__(self):
+    def __init__(self,speech_fre,mix_speech_len,num_labels,spk_num_total):
         super(SS,self).__init__()
         print 'Begin to build the maim model for speech speration part.'
         self.mix_hidden_layer_3d=MIX_SPEECH(speech_fre,mix_speech_len).cuda()
         self.mix_speech_classifier=MIX_SPEECH_classifier(speech_fre,mix_speech_len,num_labels).cuda()
         self.mix_speech_multiEmbedding=SPEECH_EMBEDDING(num_labels,config.EMBEDDING_SIZE,spk_num_total+config.UNK_SPK_SUPP).cuda()
         att_layer=ATTENTION(config.EMBEDDING_SIZE,'dot').cuda()
-        att_speech_layer=ATTENTION(config.EMBEDDING_SIZE,'dot').cuda()
-        adjust_layer=ADDJUST(2*config.HIDDEN_UNITS,config.EMBEDDING_SIZE)
-        dis_layer=Discriminator().cuda()
-        print att_speech_layer
-        print att_speech_layer.mode
-        print adjust_layer
-        print dis_layer
+        self.att_speech_layer=ATTENTION(config.EMBEDDING_SIZE,'dot').cuda()
+        self.adjust_layer=ADDJUST(2*config.HIDDEN_UNITS,config.EMBEDDING_SIZE)
+        self.dis_layer=Discriminator().cuda()
+        print self.att_speech_layer
+        print self.att_speech_layer.mode
+        print self.adjust_layer
+        print self.dis_layer
 
 
-    def forward(self, *input):
+    def forward(self, data_gen, hidden_states):
         eval_data=input[0]
         mix_speech_hidden,mix_tmp_hidden=self.mix_hidden_layer_3d(Variable(torch.from_numpy(eval_data['mix_feas'])).cuda())
         # 暂时关掉video部分,因为s2 s3 s4 的视频数据不全暂时
-
-        '''Speech self Sepration　语音自分离部分'''
-        mix_speech_output=self.mix_speech_classifier(Variable(torch.from_numpy(eval_data['mix_feas'])).cuda())
 
         y_spk_list= eval_data['multi_spk_fea_list']
         y_spk_gtruth,y_map_gtruth=multi_label_vector(y_spk_list,dict_spk2idx)
@@ -228,8 +225,9 @@ class SS(nn.Module):
 
         top_k_mask_mixspeech=top_k_mask(mix_speech_output,alpha=0.5,top_k=num_labels) #torch.Float型的
         top_k_mask_idx=[np.where(line==1)[0] for line in top_k_mask_mixspeech.numpy()]
-        mix_speech_multiEmbs=mix_speech_multiEmbedding(top_k_mask_mixspeech,top_k_mask_idx) # bs*num_labels（最多混合人个数）×Embedding的大小
-        mix_adjust=adjust_layer(mix_tmp_hidden,mix_speech_multiEmbs)
+
+        mix_speech_multiEmbs=self.mix_speech_multiEmbedding(top_k_mask_mixspeech,top_k_mask_idx) # bs*num_labels（最多混合人个数）×Embedding的大小
+        mix_adjust=self.adjust_layer(mix_tmp_hidden,mix_speech_multiEmbs)
         mix_speech_multiEmbs=mix_adjust+mix_speech_multiEmbs
 
         assert len(top_k_mask_idx[0])==len(top_k_mask_idx[-1])
@@ -242,7 +240,7 @@ class SS(nn.Module):
         mix_speech_hidden_5d_last=mix_speech_hidden_5d.view(-1,mix_speech_len,speech_fre,config.EMBEDDING_SIZE)
         # att_speech_layer=ATTENTION(config.EMBEDDING_SIZE,'align').cuda()
         # att_speech_layer=ATTENTION(config.EMBEDDING_SIZE,'dot').cuda()
-        att_multi_speech=att_speech_layer(mix_speech_hidden_5d_last,mix_speech_multiEmbs.view(-1,config.EMBEDDING_SIZE))
+        att_multi_speech=self.att_speech_layer(mix_speech_hidden_5d_last,mix_speech_multiEmbs.view(-1,config.EMBEDDING_SIZE))
         # print att_multi_speech.size()
         att_multi_speech=att_multi_speech.view(config.BATCH_SIZE,top_k_num,mix_speech_len,speech_fre) # bs,num_labels,len,fre这个东西
         # print att_multi_speech.size()
@@ -365,7 +363,7 @@ def main():
     spk_all_list,dict_spk2idx,dict_idx2spk,mix_speech_len,speech_fre,total_frames,spk_num_total,batch_total=global_para
     del spk_global_gen
     num_labels=len(spk_all_list)
-    global num_labels,spk_all_list,dict_spk2idx,dict_idx2spk,mix_speech_len,speech_fre,total_frames,spk_num_total,batch_total
+    # global num_labels,spk_all_list,dict_spk2idx,dict_idx2spk,mix_speech_len,speech_fre,total_frames,spk_num_total,batch_total
 
     print 'Begin to build the maim model for Multi_Modal Cocktail Problem.'
 

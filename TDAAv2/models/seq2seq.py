@@ -10,7 +10,7 @@ import numpy as np
 
 class seq2seq(nn.Module):
 
-    def __init__(self, config, input_emb_size, src_vocab_size, tgt_vocab_size, use_cuda, pretrain=None, score_fn=None):
+    def __init__(self, config, input_emb_size, mix_speech_len , tgt_vocab_size, use_cuda, pretrain=None, score_fn=None):
         super(seq2seq, self).__init__()
         if pretrain is not None:
             src_embedding = pretrain['src_emb']
@@ -24,11 +24,14 @@ class seq2seq(nn.Module):
         else:
             self.decoder = models.rnn_decoder(config, tgt_vocab_size, embedding=self.encoder.embedding, score_fn=score_fn)
         self.use_cuda = use_cuda
-        self.src_vocab_size = src_vocab_size
         self.tgt_vocab_size = tgt_vocab_size
         self.config = config
         self.criterion = models.criterion(tgt_vocab_size, use_cuda)
         self.log_softmax = nn.LogSoftmax()
+
+        speech_fre=input_emb_size
+        num_labels=tgt_vocab_size
+        self.ss_model=models.SS(speech_fre, mix_speech_len, num_labels, spk_num_total)
 
     def compute_loss(self, hidden_outputs, targets, memory_efficiency):
         if memory_efficiency:
