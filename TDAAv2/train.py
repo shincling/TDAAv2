@@ -71,8 +71,6 @@ print(use_cuda)
 # data
 print('loading data...\n')
 start_time = time.time()
-datas = torch.load(config.data)
-print('loading time cost: %.3f' % (time.time()-start_time))
 
 spk_global_gen=prepare_data(mode='global',train_or_test='train') #写一个假的数据生成，可以用来写模型先
 global_para=spk_global_gen.next()
@@ -80,14 +78,8 @@ print global_para
 spk_all_list,dict_spk2idx,dict_idx2spk,mix_speech_len,speech_fre,total_frames,spk_num_total,batch_total=global_para
 del spk_global_gen
 num_labels=len(spk_all_list)
+print('loading the global setting cost: %.3f' % (time.time()-start_time))
 
-trainset, validset = datas['train'], datas['valid']
-src_vocab, tgt_vocab = datas['dicts']['src'], datas['dicts']['tgt']
-config.src_vocab = src_vocab.size()
-config.tgt_vocab = tgt_vocab.size()
-
-trainloader = dataloader.get_loader(trainset, batch_size=config.batch_size, shuffle=True, num_workers=2)
-validloader = dataloader.get_loader(validset, batch_size=config.batch_size, shuffle=False, num_workers=2)
 
 if opt.pretrain:
     pretrain_embed = torch.load(config.emb_file)
@@ -176,8 +168,8 @@ def train(epoch):
             break #如果这个epoch的生成器没有数据了，直接进入下一个epoch
 
         src = Variable(torch.from_numpy(train_data['mix_feas']))
-        # raw_tgt = Variable(torch.from_numpy(np.array([spk.keys() for spk in train_data['multi_spk_fea_list']])))
-        raw_tgt = [spk.keys() for spk in train_data['multi_spk_fea_list']]
+        # raw_tgt = [spk.keys() for spk in train_data['multi_spk_fea_list']]
+        raw_tgt = [sorted(spk.keys()) for spk in train_data['multi_spk_fea_list']]
         # 要保证底下这几个都是longTensor(长整数）
         tgt = Variable(torch.from_numpy(np.array([[0]+[dict_spk2idx[spk] for spk in spks]+[dict_spk2idx['<EOS>']] for spks in raw_tgt],dtype=np.int))).transpose(0,1) #转换成数字，然后前后加开始和结束符号。
         src_len = Variable(torch.LongTensor(config.batch_size).zero_()+mix_speech_len).unsqueeze(0)
