@@ -190,7 +190,7 @@ def train(epoch):
 
         model.zero_grad()
         outputs, targets = model(src, src_len, tgt, tgt_len)
-        loss, num_total, _, _, _ = model.compute_loss(outputs, targets, opt.memory)
+        loss, num_total, num_correct = model.compute_loss(outputs, targets, opt.memory)
         print 'loss,this batch:',loss/num_total
         if updates%30==0:
             logging("time: %6.3f, epoch: %3d, updates: %8d, train loss this batch: %6.3f\n"

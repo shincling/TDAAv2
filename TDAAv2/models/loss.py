@@ -48,5 +48,5 @@ def cross_entropy_loss(hidden_outputs, decoder, targets, criterion, config, sim_
     loss.div(num_total).backward()
     loss = loss.data[0]
 
-    return loss, num_total, num_correct, config.tgt_vocab, config.tgt_vocab
+    return loss, num_total, num_correct
 

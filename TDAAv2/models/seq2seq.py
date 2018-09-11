@@ -18,7 +18,7 @@ class seq2seq(nn.Module):
         else:
             src_embedding = None
             tgt_embedding = None
-        self.encoder = models.rnn_encoder(config, input_emb_size, src_vocab_size, embedding=src_embedding)
+        self.encoder = models.rnn_encoder(config, input_emb_size,None, embedding=src_embedding)
         if config.shared_vocab == False:
             self.decoder = models.rnn_decoder(config, tgt_vocab_size, embedding=tgt_embedding, score_fn=score_fn)
         else:
@@ -31,7 +31,7 @@ class seq2seq(nn.Module):
 
         speech_fre=input_emb_size
         num_labels=tgt_vocab_size
-        self.ss_model=models.SS(speech_fre, mix_speech_len, num_labels, spk_num_total)
+        # self.ss_model=models.SS(speech_fre, mix_speech_len, num_labels, spk_num_total)
 
     def compute_loss(self, hidden_outputs, targets, memory_efficiency):
         if memory_efficiency:
