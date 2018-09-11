@@ -1,7 +1,7 @@
 data:  './data/data/save_data'
 log:  './data/data/log/'
 epoch:  50
-batch_size:  11
+batch_size:  2
 param_init:  0.1
 optim:  'adam'
 learning_rate:  0.001
@@ -52,7 +52,8 @@ HIDDEN_UNITS :  300
 # DNN/RNN层数
 NUM_LAYERS :  2
 # Embedding大小,主要是给语音第三维那部分的
-EMBEDDING_SIZE :  50
+#EMBEDDING_SIZE :  50
+EMBEDDING_SIZE :  512
 # EMBEDDING_SIZE :  40
 # 是否丰富数据
 AUGMENT_DATA :  1

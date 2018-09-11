@@ -202,8 +202,8 @@ class SS(nn.Module):
         self.num_labels=num_labels
         print 'Begin to build the maim model for speech speration part.'
         self.mix_hidden_layer_3d=MIX_SPEECH(config,speech_fre,mix_speech_len)
-        att_layer=ATTENTION(config.EMBEDDING_SIZE,'dot')
-        self.att_speech_layer=ATTENTION(config.EMBEDDING_SIZE,'dot')
+        # att_layer=ATTENTION(config.EMBEDDING_SIZE,'dot')
+        self.att_speech_layer=ATTENTION(config.EMBEDDING_SIZE,'align')
         self.adjust_layer=ADDJUST(2*config.HIDDEN_UNITS,config.EMBEDDING_SIZE)
         self.dis_layer=Discriminator()
         print self.att_speech_layer
@@ -216,7 +216,7 @@ class SS(nn.Module):
         config=self.config
         top_k_num=targets.size()[0]
         mix_speech_hidden,mix_tmp_hidden=self.mix_hidden_layer_3d(mix_feas)
-        mix_speech_multiEmbs=hidden_outputs# bs*num_labels（最多混合人个数）×Embedding的大小
+        mix_speech_multiEmbs=torch.transpose(hidden_outputs,0,1).contiguous()# bs*num_labels（最多混合人个数）×Embedding的大小
         mix_speech_hidden_5d=mix_speech_hidden.view(config.batch_size,1,self.mix_speech_len,self.speech_fre,config.EMBEDDING_SIZE)
         mix_speech_hidden_5d=mix_speech_hidden_5d.expand(config.batch_size,top_k_num,self.mix_speech_len,self.speech_fre,config.EMBEDDING_SIZE).contiguous()
         mix_speech_hidden_5d_last=mix_speech_hidden_5d.view(-1,self.mix_speech_len,self.speech_fre,config.EMBEDDING_SIZE)

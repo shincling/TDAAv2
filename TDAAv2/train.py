@@ -183,7 +183,8 @@ def train(epoch):
             tgt_len = tgt_len.cuda()
 
         model.zero_grad()
-        outputs, targets = model(src, src_len, tgt, tgt_len) #这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
+        outputs, targets, mask = model(src, src_len, tgt, tgt_len) #这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
+        print 'mask size:',mask.size()
         loss, num_total, num_correct = model.compute_loss(outputs, targets, opt.memory)
         print 'loss,this batch:',loss/num_total
         if updates%30==0:
