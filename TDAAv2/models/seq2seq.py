@@ -31,7 +31,7 @@ class seq2seq(nn.Module):
 
         speech_fre=input_emb_size
         num_labels=tgt_vocab_size
-        # self.ss_model=models.SS(speech_fre, mix_speech_len, num_labels, spk_num_total)
+        self.ss_model=models.SS(config, speech_fre, mix_speech_len, num_labels)
 
     def compute_loss(self, hidden_outputs, targets, memory_efficiency):
         if memory_efficiency:
@@ -48,7 +48,9 @@ class seq2seq(nn.Module):
 
         contexts, state = self.encoder(src, lengths.data.tolist()) # context是：（max_len,batch_size,hidden_size×2方向）这么大
         outputs, final_state = self.decoder(tgt[:-1], state, contexts.transpose(0, 1))
-        return outputs, tgt[1:]
+        # 这里的outputs就是没个step输出的隐层向量,大小是len+1,bs,emb（注意是第一个词到 EOS的总共）
+        predicted_maps=self.ss_model(src,outputs[:-1,:],tgt[1:-1])
+        return outputs, tgt[1:], predicted_maps
 
     def sample(self, src, src_len):
 

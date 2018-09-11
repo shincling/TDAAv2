@@ -28,7 +28,9 @@ parser.add_argument('-config', default='config.yaml', type=str,
                     help="config file")
 parser.add_argument('-gpus', default=[0], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
-parser.add_argument('-restore', default='data/data/log/2018-08-15-17:53:44/checkpoint_first.pt', type=str,
+# parser.add_argument('-restore', default='data/data/log/2018-08-15-17:53:44/checkpoint_first.pt', type=str,
+#                     help="restore checkpoint")
+parser.add_argument('-restore', default=None, type=str,
                     help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
                     help="Random seed")
@@ -181,7 +183,7 @@ def train(epoch):
             tgt_len = tgt_len.cuda()
 
         model.zero_grad()
-        outputs, targets = model(src, src_len, tgt, tgt_len)
+        outputs, targets = model(src, src_len, tgt, tgt_len) #这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
         loss, num_total, num_correct = model.compute_loss(outputs, targets, opt.memory)
         print 'loss,this batch:',loss/num_total
         if updates%30==0:
@@ -225,7 +227,8 @@ def eval(epoch):
         if eval_data==False:
             break #如果这个epoch的生成器没有数据了，直接进入下一个epoch
         src = Variable(torch.from_numpy(eval_data['mix_feas']))
-        raw_tgt = [spk.keys() for spk in eval_data['multi_spk_fea_list']]
+
+        raw_tgt = [sorted(spk.keys()) for spk in eval_data['multi_spk_fea_list']]
         # 要保证底下这几个都是longTensor(长整数）
         tgt = Variable(torch.from_numpy(np.array([[0]+[dict_spk2idx[spk] for spk in spks]+[dict_spk2idx['<EOS>']] for spks in raw_tgt],dtype=np.int))).transpose(0,1) #转换成数字，然后前后加开始和结束符号。
         src_len = Variable(torch.LongTensor(config.batch_size).zero_()+mix_speech_len).unsqueeze(0)
