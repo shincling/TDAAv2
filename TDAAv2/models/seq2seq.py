@@ -39,6 +39,9 @@ class seq2seq(nn.Module):
         else:
             return models.cross_entropy_loss(hidden_outputs, self.decoder, targets, self.criterion, self.config)
 
+    def separation_loss(config, x_input_map_multi,masks,y_multi_map):
+        return models.ss_loss(config, x_input_map_multi,masks,y_multi_map)
+
     def forward(self, src, src_len, tgt, tgt_len):
         # 感觉这是个把一个batch里的数据按从长到短调整顺序的意思
         lengths, indices = torch.sort(src_len.squeeze(0), dim=0, descending=True)

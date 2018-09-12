@@ -172,6 +172,8 @@ def train(epoch):
         src = Variable(torch.from_numpy(train_data['mix_feas']))
         # raw_tgt = [spk.keys() for spk in train_data['multi_spk_fea_list']]
         raw_tgt = [sorted(spk.keys()) for spk in train_data['multi_spk_fea_list']]
+        feas_tgt=models.rank_feas(raw_tgt,train_data['multi_spk_fea_list']) #这里是目标的图谱
+
         # 要保证底下这几个都是longTensor(长整数）
         tgt = Variable(torch.from_numpy(np.array([[0]+[dict_spk2idx[spk] for spk in spks]+[dict_spk2idx['<EOS>']] for spks in raw_tgt],dtype=np.int))).transpose(0,1) #转换成数字，然后前后加开始和结束符号。
         src_len = Variable(torch.LongTensor(config.batch_size).zero_()+mix_speech_len).unsqueeze(0)
@@ -183,10 +185,11 @@ def train(epoch):
             tgt_len = tgt_len.cuda()
 
         model.zero_grad()
-        outputs, targets, mask = model(src, src_len, tgt, tgt_len) #这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
-        print 'mask size:',mask.size()
+        outputs, targets, multi_mask = model(src, src_len, tgt, tgt_len) #这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
+        print 'mask size:',multi_mask.size()
         loss, num_total, num_correct = model.compute_loss(outputs, targets, opt.memory)
         print 'loss,this batch:',loss/num_total
+        # ss_loss = model.separation_loss(config, src, multi_mask, )
         if updates%30==0:
             logging("time: %6.3f, epoch: %3d, updates: %8d, train loss this batch: %6.3f\n"
                     % (time.time()-start_time, epoch, updates, loss / num_total))
