@@ -19,7 +19,7 @@ import soundfile as sf
 # import matlab.engine
 # from separation import bss_eval_sources
 # import bss_test
-import lrs
+# import lrs
 
 np.random.seed(1)#设定种子
 torch.manual_seed(1)

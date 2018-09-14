@@ -20,7 +20,7 @@ channel_first=config.channel_first
 np.random.seed(1)#设定种子
 random.seed(1)
 
-aim_path='/home/sw/Shin/Codes/DL4SS_Keras/Torch_multi/Dataset_Multi/1/'+config.DATASET
+aim_path='../../DL4SS_Keras/Torch_multi/Dataset_Multi/1/'+config.DATASET
 # 训练文件列表
 TRAIN_LIST = aim_path+'/train_list'
 # 验证文件列表
@@ -94,7 +94,7 @@ def prepare_data(mode,train_or_test,min=None,max=None):
             all_spk = all_spk_train+all_spk_eval+all_spk_test
             spk_samples_list={}
             batch_idx=0
-            list_path='/home/sw/Shin/Codes/DL4SS_Keras/TDAA_beta/create-speaker-mixtures/'
+            list_path='../../DL4SS_Keras/TDAA_beta/create-speaker-mixtures/'
             all_samples_list={}
             sample_idx={}
             number_samples={}
