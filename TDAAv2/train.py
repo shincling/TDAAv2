@@ -78,6 +78,8 @@ spk_global_gen=prepare_data(mode='global',train_or_test='train') #写一个假�
 global_para=spk_global_gen.next()
 print global_para
 spk_all_list,dict_spk2idx,dict_idx2spk,mix_speech_len,speech_fre,total_frames,spk_num_total,batch_total=global_para
+config.speech_fre=speech_fre
+config.mix_speech_len=mix_speech_len
 del spk_global_gen
 num_labels=len(spk_all_list)
 print('loading the global setting cost: %.3f' % (time.time()-start_time))
@@ -183,21 +185,24 @@ def train(epoch):
             tgt = tgt.cuda()
             src_len = src_len.cuda()
             tgt_len = tgt_len.cuda()
+            feas_tgt = feas_tgt.cuda()
 
         model.zero_grad()
         outputs, targets, multi_mask = model(src, src_len, tgt, tgt_len) #这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
         print 'mask size:',multi_mask.size()
-        loss, num_total, num_correct = model.compute_loss(outputs, targets, opt.memory)
-        print 'loss,this batch:',loss/num_total
-        # ss_loss = model.separation_loss(config, src, multi_mask, )
-        if updates%30==0:
-            logging("time: %6.3f, epoch: %3d, updates: %8d, train loss this batch: %6.3f\n"
-                    % (time.time()-start_time, epoch, updates, loss / num_total))
+        # loss, num_total, num_correct = model.compute_loss(outputs, targets, opt.memory)
+        # print 'loss,this batch:',loss/num_total
+        ss_loss = model.separation_loss(src, multi_mask, feas_tgt)
 
-        total_loss += loss
-        report_total += num_total
+        # if updates%30==0:
+        #     logging("time: %6.3f, epoch: %3d, updates: %8d, train loss this batch: %6.3f\n"
+        #             % (time.time()-start_time, epoch, updates, loss / num_total))
+
+        total_loss += ss_loss
+        # report_total += num_total
         optim.step()
         updates += 1
+        continue
 
         if 1 and updates % config.eval_interval == 0:
             logging("time: %6.3f, epoch: %3d, updates: %8d, train loss: %6.3f\n"

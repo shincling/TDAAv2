@@ -27,6 +27,7 @@ class seq2seq(nn.Module):
         self.tgt_vocab_size = tgt_vocab_size
         self.config = config
         self.criterion = models.criterion(tgt_vocab_size, use_cuda)
+        self.loss_for_ss= nn.MSELoss()
         self.log_softmax = nn.LogSoftmax()
 
         speech_fre=input_emb_size
@@ -39,8 +40,8 @@ class seq2seq(nn.Module):
         else:
             return models.cross_entropy_loss(hidden_outputs, self.decoder, targets, self.criterion, self.config)
 
-    def separation_loss(config, x_input_map_multi,masks,y_multi_map):
-        return models.ss_loss(config, x_input_map_multi,masks,y_multi_map)
+    def separation_loss(self, x_input_map_multi,masks,y_multi_map):
+        return models.ss_loss(self.config, x_input_map_multi,masks,y_multi_map,self.loss_for_ss)
 
     def forward(self, src, src_len, tgt, tgt_len):
         # 感觉这是个把一个batch里的数据按从长到短调整顺序的意思

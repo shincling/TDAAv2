@@ -60,30 +60,24 @@ def cross_entropy_loss(hidden_outputs, decoder, targets, criterion, config, sim_
 
     return loss, num_total, num_correct
 
-def ss_loss(config,x_input_map_multi,masks,y_multi_map):
+def ss_loss(config,x_input_map_multi,multi_mask,y_multi_map,loss_multi_func):
+    siz=x_input_map_multi.size()
+    assert len(siz)==3
+    topk=y_multi_map.size()[1]
+    x_input_map_multi=torch.unsqueeze(x_input_map_multi,1).expand(siz[0],topk,siz[1],siz[2])
+
     predict_multi_map=multi_mask*x_input_map_multi
-    y_multi_map=np.zeros([config.batch_size,top_k_num,mix_speech_len,speech_fre],dtype=np.float32)
-    batch_spk_multi_dict=eval_data['multi_spk_fea_list']
-    for idx,sample in enumerate(batch_spk_multi_dict):
-        y_idx=sorted([dict_spk2idx[spk] for spk in sample.keys()])
-        assert y_idx==list(top_k_mask_idx[idx])
-        for jdx,oo in enumerate(y_idx):
-            y_multi_map[idx,jdx]=sample[dict_idx2spk[oo]]
-    y_multi_map= Variable(torch.from_numpy(y_multi_map))
+    y_multi_map= Variable(y_multi_map)
 
     loss_multi_speech=loss_multi_func(predict_multi_map,y_multi_map)
 
     #各通道和为１的loss部分,应该可以更多的带来差异
-    y_sum_map=Variable(torch.ones(config.batch_size,mix_speech_len,speech_fre))
+    y_sum_map=Variable(torch.ones(config.batch_size,config.mix_speech_len,config.speech_fre)).cuda()
     predict_sum_map=torch.sum(multi_mask,1)
     loss_multi_sum_speech=loss_multi_func(predict_sum_map,y_sum_map)
-    # loss_multi_speech=loss_multi_speech #todo:以后可以研究下这个和为１的效果对比一下，暂时直接MSE效果已经很不错了。
     print 'loss 1 eval, losssum eval : ',loss_multi_speech.data.cpu().numpy(),loss_multi_sum_speech.data.cpu().numpy()
-    lrs.send('loss mask eval:',loss_multi_speech.data.cpu()[0])
-    lrs.send('loss sum eval:',loss_multi_sum_speech.data.cpu()[0])
-    loss_multi_speech=loss_multi_speech+0.5*loss_multi_sum_speech
+    # loss_multi_speech=loss_multi_speech+0.5*loss_multi_sum_speech
     print 'evaling multi-abs norm this eval batch:',torch.abs(y_multi_map-predict_multi_map).norm().data.cpu().numpy()
-    print 'loss:',loss_multi_speech.data.cpu().numpy()
-
-    return loss
+    print 'loss for separation part:',loss_multi_speech.data.cpu().numpy()
+    return loss_multi_speech
 

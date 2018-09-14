@@ -119,10 +119,10 @@ class MIX_SPEECH(nn.Module):
         super(MIX_SPEECH,self).__init__()
         self.input_fre=input_fre
         self.mix_speech_len=mix_speech_len
-        self.layer=nn.GRU(
+        self.layer=nn.LSTM(
             input_size=input_fre,
             hidden_size=config.HIDDEN_UNITS,
-            num_layers=config.NUM_LAYERS,
+            num_layers=4,
             batch_first=True,
             bidirectional=True
         )
