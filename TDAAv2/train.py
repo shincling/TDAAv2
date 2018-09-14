@@ -193,11 +193,12 @@ def train(epoch):
         # loss, num_total, num_correct = model.compute_loss(outputs, targets, opt.memory)
         # print 'loss,this batch:',loss/num_total
         ss_loss = model.separation_loss(src, multi_mask, feas_tgt)
+        ss_loss.backward()
 
         # if updates%30==0:
         #     logging("time: %6.3f, epoch: %3d, updates: %8d, train loss this batch: %6.3f\n"
         #             % (time.time()-start_time, epoch, updates, loss / num_total))
-
+        # loss=loss+ss_loss
         total_loss += ss_loss
         # report_total += num_total
         optim.step()

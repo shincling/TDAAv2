@@ -1,7 +1,7 @@
 data:  './data/data/save_data'
 log:  './data/data/log/'
 epoch:  50
-batch_size:  5
+batch_size:  4
 param_init:  0.1
 optim:  'adam'
 learning_rate:  0.001
@@ -52,9 +52,10 @@ HIDDEN_UNITS :  300
 # DNN/RNN层数
 NUM_LAYERS :  2
 # Embedding大小,主要是给语音第三维那部分的
-#EMBEDDING_SIZE :  50
-EMBEDDING_SIZE :  512
-# EMBEDDING_SIZE :  40
+EMBEDDING_SIZE :  50
+#EMBEDDING_SIZE :  40
+SPK_EMB_SIZE : 512
+ATT_SIZE : 100 # 这个是SS里面参数ATT的最外层的统一的大小
 # 是否丰富数据
 AUGMENT_DATA :  1
 # set the max epoch of training

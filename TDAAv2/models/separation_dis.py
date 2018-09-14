@@ -68,14 +68,17 @@ def bss_eval(predict_multi_map,y_multi_map,y_map_gtruth,dict_idx2spk,train_data)
 
 
 class ATTENTION(nn.Module):
-    def __init__(self,hidden_size,mode='dot'):
+    def __init__(self,hidden_size,query_size,align_hidden_size,mode='dot'):
         super(ATTENTION,self).__init__()
         # self.mix_emb_size=config.EMBEDDING_SIZE
         self.hidden_size=hidden_size
-        self.align_hidden_size=hidden_size #align模式下的隐层大小，暂时取跟原来一致的
+        self.query_size=query_size
+        # self.align_hidden_size=hidden_size #align模式下的隐层大小，暂时取跟原来一致的
+        self.align_hidden_size=align_hidden_size#align模式下的隐层大小，暂时取跟原来一致的
         self.mode=mode
         self.Linear_1=nn.Linear(self.hidden_size,self.align_hidden_size,bias=False)
-        self.Linear_2=nn.Linear(hidden_size,self.align_hidden_size,bias=False)
+        # self.Linear_2=nn.Linear(hidden_sizedw,self.align_hidden_size,bias=False)
+        self.Linear_2=nn.Linear(self.query_size,self.align_hidden_size,bias=False)
         self.Linear_3=nn.Linear(self.align_hidden_size,1,bias=False)
 
     def forward(self,mix_hidden,query):
@@ -203,13 +206,13 @@ class SS(nn.Module):
         print 'Begin to build the maim model for speech speration part.'
         self.mix_hidden_layer_3d=MIX_SPEECH(config,speech_fre,mix_speech_len)
         # att_layer=ATTENTION(config.EMBEDDING_SIZE,'dot')
-        self.att_speech_layer=ATTENTION(config.EMBEDDING_SIZE,'align')
-        self.adjust_layer=ADDJUST(2*config.HIDDEN_UNITS,config.EMBEDDING_SIZE)
-        self.dis_layer=Discriminator()
-        print self.att_speech_layer
-        print self.att_speech_layer.mode
-        print self.adjust_layer
-        print self.dis_layer
+        self.att_speech_layer=ATTENTION(config.EMBEDDING_SIZE,config.SPK_EMB_SIZE,config.ATT_SIZE,'align')
+        # self.adjust_layer=ADDJUST(2*config.HIDDEN_UNITS,config.EMBEDDING_SIZE)
+        # self.dis_layer=Discriminator()
+        # print self.att_speech_layer
+        # print self.att_speech_layer.mode
+        # print self.adjust_layer
+        # print self.dis_layer
 
 
     def forward(self, mix_feas, hidden_outputs, targets):
@@ -220,7 +223,7 @@ class SS(nn.Module):
         mix_speech_hidden_5d=mix_speech_hidden.view(config.batch_size,1,self.mix_speech_len,self.speech_fre,config.EMBEDDING_SIZE)
         mix_speech_hidden_5d=mix_speech_hidden_5d.expand(config.batch_size,top_k_num,self.mix_speech_len,self.speech_fre,config.EMBEDDING_SIZE).contiguous()
         mix_speech_hidden_5d_last=mix_speech_hidden_5d.view(-1,self.mix_speech_len,self.speech_fre,config.EMBEDDING_SIZE)
-        att_multi_speech=self.att_speech_layer(mix_speech_hidden_5d_last,mix_speech_multiEmbs.view(-1,config.EMBEDDING_SIZE))
+        att_multi_speech=self.att_speech_layer(mix_speech_hidden_5d_last,mix_speech_multiEmbs.view(-1,config.SPK_EMB_SIZE))
         att_multi_speech=att_multi_speech.view(config.batch_size,top_k_num,self.mix_speech_len,self.speech_fre) # bs,num_labels,len,fre这个东西
         multi_mask=att_multi_speech
         return multi_mask
