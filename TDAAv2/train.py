@@ -188,22 +188,23 @@ def train(epoch):
             feas_tgt = feas_tgt.cuda()
 
         model.zero_grad()
+        # optim.optimizer.zero_grad()
         outputs, targets, multi_mask = model(src, src_len, tgt, tgt_len) #这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
         print 'mask size:',multi_mask.size()
-        # loss, num_total, num_correct = model.compute_loss(outputs, targets, opt.memory)
-        # print 'loss,this batch:',loss/num_total
+        sgm_loss, num_total, num_correct = model.compute_loss(outputs, targets, opt.memory)
+        print 'loss for SGM,this batch:',sgm_loss.data[0]/num_total
         ss_loss = model.separation_loss(src, multi_mask, feas_tgt)
-        ss_loss.backward()
 
-        # if updates%30==0:
-        #     logging("time: %6.3f, epoch: %3d, updates: %8d, train loss this batch: %6.3f\n"
-        #             % (time.time()-start_time, epoch, updates, loss / num_total))
-        # loss=loss+ss_loss
-        total_loss += ss_loss
-        # report_total += num_total
+        loss=sgm_loss+ss_loss
+        loss.backward()
+        # print 'totallllllllllll loss:',loss
+        total_loss += loss.data[0]
+        report_total += num_total
         optim.step()
+        if updates%30==0:
+            logging("time: %6.3f, epoch: %3d, updates: %8d, train loss this batch: %6.3f,sgm loss: %6.6f,ss loss: %6.6f\n"
+                    % (time.time()-start_time, epoch, updates, loss / num_total, sgm_loss.data[0],ss_loss.data[0]))
         updates += 1
-        continue
 
         if 1 and updates % config.eval_interval == 0:
             logging("time: %6.3f, epoch: %3d, updates: %8d, train loss: %6.3f\n"

@@ -1,7 +1,7 @@
 data:  './data/data/save_data'
 log:  './data/data/log/'
 epoch:  50
-batch_size:  4
+batch_size:  32
 param_init:  0.1
 optim:  'adam'
 learning_rate:  0.001
@@ -18,7 +18,7 @@ decoder_hidden_size:  512
 num_layers:  2
 dropout:  0.5
 max_tgt_len:  25
-eval_interval:  20
+eval_interval:  300
 save_interval:  3000
 max_generator_batches:  32
 metric:  ['hamming_loss', 'micro_f1']
@@ -28,7 +28,7 @@ beam_size:  5
 # 设定最小混叠说话人数，Minimum number of mixed speakers for training
 MIN_MIX :  2
 # 设定最大混叠说话人数，Maximum number of mixed speakers for training
-MAX_MIX :  3
+MAX_MIX :  2
 # mode: 1 纯净语音刺激, 2 图片刺激, 3 视频刺激, 4 top-down概念刺激
 MODE :  1
 # 数据集
