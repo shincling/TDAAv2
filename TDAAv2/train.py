@@ -234,6 +234,7 @@ def eval(epoch):
     # for raw_src, src, src_len, raw_tgt, tgt, tgt_len in validloader:
     while True:
     # for ___ in range(100):
+        print '-'*30
         eval_data=eval_data_gen.next()
         if eval_data==False:
             break #如果这个epoch的生成器没有数据了，直接进入下一个epoch
@@ -244,15 +245,27 @@ def eval(epoch):
         tgt = Variable(torch.from_numpy(np.array([[0]+[dict_spk2idx[spk] for spk in spks]+[dict_spk2idx['<EOS>']] for spks in raw_tgt],dtype=np.int))).transpose(0,1) #转换成数字，然后前后加开始和结束符号。
         src_len = Variable(torch.LongTensor(config.batch_size).zero_()+mix_speech_len).unsqueeze(0)
         tgt_len = Variable(torch.LongTensor(config.batch_size).zero_()+len(eval_data['multi_spk_fea_list'][0])).unsqueeze(0)
+        feas_tgt=models.rank_feas(raw_tgt,eval_data['multi_spk_fea_list']) #这里是目标的图谱
+        if use_cuda:
+            src = src.cuda()
+            tgt = tgt.cuda()
+            src_len = src_len.cuda()
+            tgt_len = tgt_len.cuda()
+            feas_tgt = feas_tgt.cuda()
+
         if len(opt.gpus) > 1:
             samples, alignment = model.module.sample(src, src_len)
         else:
-            samples, alignment, hiddens = model.beam_sample(src, src_len, dict_spk2idx, tgt, beam_size=config.beam_size)
+            samples, alignment, hiddens, predicted_maps = model.beam_sample(src, src_len, dict_spk2idx, tgt, beam_size=config.beam_size)
+
+        ss_loss = model.separation_loss(src, predicted_maps, feas_tgt)
+        print 'loss for ss,this batch:',ss_loss.data[0]
+
         candidate += [convertToLabels(dict_idx2spk,s, dict_spk2idx['<EOS>']) for s in samples]
         # source += raw_src
         reference += raw_tgt
-        # print 'samples:',samples
-        # print 'can, ref:',candidate[-1],reference[-1]
+        print 'samples:',samples
+        print 'can:{}, \nref:{}'.format(candidate[-1*config.batch_size:],reference[-1*config.batch_size:])
         alignments += [align for align in alignment]
 
     if opt.unk:
