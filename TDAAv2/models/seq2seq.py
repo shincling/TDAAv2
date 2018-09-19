@@ -57,7 +57,7 @@ class seq2seq(nn.Module):
         return outputs, tgt[1:], predicted_maps
 
     def sample(self, src, src_len):
-
+        # src=src.squeeze()
         if self.use_cuda:
             src = src.cuda()
             src_len = src_len.cuda()
@@ -81,7 +81,7 @@ class seq2seq(nn.Module):
         return sample_ids.t(), alignments.t()
 
 
-    def beam_sample(self, src, src_len, dict_spk2idx, beam_size = 1):
+    def beam_sample(self, src, src_len, dict_spk2idx, tgt, beam_size = 1):
 
         #beam_size = self.config.beam_size
         batch_size = src.size(0)
@@ -132,7 +132,7 @@ class seq2seq(nn.Module):
                       .t().contiguous().view(-1))
 
             # Run one step.
-            output, decState, attn = self.decoder.sample_one(inp, soft_score, decState, contexts, mask)
+            output, decState, attn ,hidden = self.decoder.sample_one(inp, soft_score, decState, contexts, mask)
             soft_score = F.softmax(output)
             predicted = output.max(1)[1]
             if self.config.mask:
@@ -145,31 +145,34 @@ class seq2seq(nn.Module):
             # (b) Compute a vector of batch*beam word scores.
             output = unbottle(self.log_softmax(output))
             attn = unbottle(attn)
+            hidden = unbottle(hidden)
                 # beam x tgt_vocab
 
             # (c) Advance each beam.
             # update state
             for j, b in enumerate(beam):
-                b.advance(output.data[:, j], attn.data[:, j])
+                b.advance(output.data[:, j], attn.data[:, j], hidden.data[:,j])
                 b.beam_update(decState, j)
 
         # (3) Package everything up.
-        allHyps, allScores, allAttn = [], [], []
+        allHyps, allScores, allAttn, allHiddens = [], [], [], []
 
         ind=range(batch_size)
         for j in ind:
             b = beam[j]
             n_best = 1
             scores, ks = b.sortFinished(minimum=n_best)
-            hyps, attn = [], []
+            hyps, attn, hiddens = [], [], []
             for i, (times, k) in enumerate(ks[:n_best]):
-                hyp, att = b.getHyp(times, k)
+                hyp, att, hidden = b.getHyp(times, k)
                 hyps.append(hyp)
                 attn.append(att.max(1)[1])
+                hiddens.append(hidden)
             allHyps.append(hyps[0])
             allScores.append(scores[0])
             allAttn.append(attn[0])
+            allHiddens.append(hiddens[0])
 
-        #print(allHyps)
-        #print(allAttn)
-        return allHyps, allAttn
+        outputs=Variable(torch.stack(allHiddens,0).transpose(0,1)) # to [decLen, bs, dim]
+        predicted_maps=self.ss_model(src,outputs[:-1,:],tgt[1:-1])
+        return allHyps, allAttn, allHiddens, predicted_maps

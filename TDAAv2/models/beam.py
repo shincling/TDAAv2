@@ -26,6 +26,9 @@ class Beam(object):
         # The attentions (matrix) for each time.
         self.attn = []
 
+        # The last hiddens(matrix) for each time.
+        self.hiddens= []
+
         # Time and k pair for finished.
         self.finished = []
         self.n_best = n_best
@@ -39,7 +42,7 @@ class Beam(object):
         "Get the backpointers for the current timestep."
         return self.prevKs[-1]
 
-    def advance(self, wordLk, attnOut):
+    def advance(self, wordLk, attnOut, hidden):
         """
         Given prob over words for every last beam `wordLk` and attention
         `attnOut`: Compute and update the beam search.
@@ -72,6 +75,7 @@ class Beam(object):
         self.prevKs.append(prevK)
         self.nextYs.append((bestScoresId - prevK * numWords))
         self.attn.append(attnOut.index_select(0, prevK))
+        self.hiddens.append(hidden.index_select(0, prevK))
 
         for i in range(self.nextYs[-1].size(0)):
             if self.nextYs[-1][i] == self._eos:
@@ -94,6 +98,13 @@ class Beam(object):
             sentStates = e[:, :, idx]
             sentStates.data.copy_(sentStates.data.index_select(1, positions))
 
+    def beam_update_hidden(self, state, idx):
+        positions = self.getCurrentOrigin()
+        e = state
+        a, br, d = e.size()
+        e = e.view(a, self.size, br // self.size, d)
+        sentStates = e[:, :, idx]
+        sentStates.data.copy_(sentStates.data.index_select(1, positions))
 
     def sortFinished(self, minimum=None):
         if minimum is not None:
@@ -112,9 +123,10 @@ class Beam(object):
         """
         Walk back to construct the full hypothesis.
         """
-        hyp, attn = [], []
+        hyp, attn, hidden = [], [], []
         for j in range(len(self.prevKs[:timestep]) - 1, -1, -1):
             hyp.append(self.nextYs[j+1][k])
             attn.append(self.attn[j][k])
+            hidden.append(self.hiddens[j][k])
             k = self.prevKs[j][k]
-        return hyp[::-1], torch.stack(attn[::-1])
+        return hyp[::-1], torch.stack(attn[::-1]), torch.stack(hidden[::-1])

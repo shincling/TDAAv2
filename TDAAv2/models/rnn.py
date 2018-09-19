@@ -234,4 +234,4 @@ class rnn_decoder(nn.Module):
         if self.config.mask:
             if mask is not None:
                 output = output.scatter_(1, mask, -9999999999)
-        return output, state, attn_weigths
+        return output, state, attn_weigths, hidden

@@ -26,12 +26,12 @@ parser = argparse.ArgumentParser(description='train.py')
 
 parser.add_argument('-config', default='config.yaml', type=str,
                     help="config file")
-parser.add_argument('-gpus', default=[0], nargs='+', type=int,
+parser.add_argument('-gpus', default=[2], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
-# parser.add_argument('-restore', default='data/data/log/2018-08-15-17:53:44/checkpoint_first.pt', type=str,
-#                     help="restore checkpoint")
-parser.add_argument('-restore', default=None, type=str,
+parser.add_argument('-restore', default='best_f1_v0.pt', type=str,
                     help="restore checkpoint")
+# parser.add_argument('-restore', default=None, type=str,
+#                     help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
                     help="Random seed")
 parser.add_argument('-model', default='seq2seq', type=str,
@@ -206,7 +206,7 @@ def train(epoch):
                     % (time.time()-start_time, epoch, updates, loss / num_total, sgm_loss.data[0],ss_loss.data[0]))
         updates += 1
 
-        if 1 and updates % config.eval_interval == 0:
+        if 1 or updates % config.eval_interval == 0:
             logging("time: %6.3f, epoch: %3d, updates: %8d, train loss: %6.3f\n"
                     % (time.time()-start_time, epoch, updates, total_loss / report_total))
             print('evaluating after %d updates...\r' % updates)
@@ -247,11 +247,12 @@ def eval(epoch):
         if len(opt.gpus) > 1:
             samples, alignment = model.module.sample(src, src_len)
         else:
-            samples, alignment = model.beam_sample(src, src_len, dict_spk2idx, beam_size=config.beam_size)
-
+            samples, alignment, hiddens = model.beam_sample(src, src_len, dict_spk2idx, tgt, beam_size=config.beam_size)
         candidate += [convertToLabels(dict_idx2spk,s, dict_spk2idx['<EOS>']) for s in samples]
         # source += raw_src
         reference += raw_tgt
+        # print 'samples:',samples
+        # print 'can, ref:',candidate[-1],reference[-1]
         alignments += [align for align in alignment]
 
     if opt.unk:
