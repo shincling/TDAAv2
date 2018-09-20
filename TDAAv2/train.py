@@ -27,7 +27,7 @@ parser = argparse.ArgumentParser(description='train.py')
 
 parser.add_argument('-config', default='config.yaml', type=str,
                     help="config file")
-parser.add_argument('-gpus', default=[0], nargs='+', type=int,
+parser.add_argument('-gpus', default=[5], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
 parser.add_argument('-restore', default='best_f1_v0.pt', type=str,
                     help="restore checkpoint")
@@ -195,7 +195,13 @@ def train(epoch):
         print 'mask size:',multi_mask.size()
         sgm_loss, num_total, num_correct = model.compute_loss(outputs, targets, opt.memory)
         print 'loss for SGM,this batch:',sgm_loss.data[0]/num_total
-        ss_loss = model.separation_loss(src, multi_mask, feas_tgt)
+
+        # expand the raw mixed-features to topk channel.
+        siz=src.size()
+        assert len(siz)==3
+        topk=feas_tgt.size()[1]
+        x_input_map_multi=torch.unsqueeze(src,1).expand(siz[0],topk,siz[1],siz[2])
+        ss_loss = model.separation_loss(x_input_map_multi, multi_mask, feas_tgt)
 
         loss=sgm_loss+ss_loss
         loss.backward()
@@ -239,6 +245,7 @@ def eval(epoch):
     eval_data_gen=prepare_data('once','valid',2,2)
     # for raw_src, src, src_len, raw_tgt, tgt, tgt_len in validloader:
     SDR_SUM=np.array([])
+    batch_idx=0
     while True:
     # for ___ in range(100):
         print '-'*30
@@ -274,10 +281,11 @@ def eval(epoch):
         ss_loss = model.separation_loss(x_input_map_multi, predicted_masks, feas_tgt)
         print 'loss for ss,this batch:',ss_loss.data[0]
 
-        predicted_maps=predicted_masks*x_input_map_multi
-        utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data)
-        SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_output/'))
-        print 'SDR_aver_now:',SDR_SUM.mean()
+        if batch_idx<=20: #only the former batches counts the SDR
+            predicted_maps=predicted_masks*x_input_map_multi
+            utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data)
+            SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_output/'))
+            print 'SDR_aver_now:',SDR_SUM.mean()
 
         candidate += [convertToLabels(dict_idx2spk,s, dict_spk2idx['<EOS>']) for s in samples]
         # source += raw_src
