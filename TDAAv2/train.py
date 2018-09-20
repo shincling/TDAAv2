@@ -12,6 +12,7 @@ import data.dict as dict
 from optims import Optim
 import lr_scheduler as L
 from predata_fromList_123 import prepare_data,prepare_datasize
+import bss_test
 
 import os
 import argparse
@@ -26,7 +27,7 @@ parser = argparse.ArgumentParser(description='train.py')
 
 parser.add_argument('-config', default='config.yaml', type=str,
                     help="config file")
-parser.add_argument('-gpus', default=[2], nargs='+', type=int,
+parser.add_argument('-gpus', default=[0], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
 parser.add_argument('-restore', default='best_f1_v0.pt', type=str,
                     help="restore checkpoint")
@@ -142,6 +143,7 @@ else:
     updates = 0
 
 total_loss, start_time = 0, time.time()
+total_loss_sgm,total_loss_ss= 0 , 0
 report_total, report_correct = 0, 0
 report_vocab, report_tot_vocab = 0, 0
 scores = [[] for metric in config.metric]
@@ -162,7 +164,7 @@ def train(epoch):
     if opt.model == 'gated': 
         model.current_epoch = epoch
 
-    global e, updates, total_loss, start_time, report_total
+    global e, updates, total_loss, start_time, report_total, total_loss_sgm, total_loss_ss
 
     train_data_gen=prepare_data('once','train')
     # for raw_src, src, src_len, raw_tgt, tgt, tgt_len in trainloader:
@@ -198,13 +200,17 @@ def train(epoch):
         loss=sgm_loss+ss_loss
         loss.backward()
         # print 'totallllllllllll loss:',loss
-        total_loss += loss.data[0]
+        total_loss_sgm += sgm_loss.data[0]
+        total_loss_ss += ss_loss.data[0]
         report_total += num_total
         optim.step()
+        updates += 1
         if updates%30==0:
             logging("time: %6.3f, epoch: %3d, updates: %8d, train loss this batch: %6.3f,sgm loss: %6.6f,ss loss: %6.6f\n"
-                    % (time.time()-start_time, epoch, updates, loss / num_total, sgm_loss.data[0],ss_loss.data[0]))
-        updates += 1
+                    % (time.time()-start_time, epoch, updates, loss / num_total, total_loss_sgm/30.0, total_loss_ss/30.0))
+            total_loss_sgm, total_loss_ss = 0, 0
+
+        # continue
 
         if 1 or updates % config.eval_interval == 0:
             logging("time: %6.3f, epoch: %3d, updates: %8d, train loss: %6.3f\n"
@@ -224,7 +230,7 @@ def train(epoch):
             report_total = 0
 
         if updates % config.save_interval == 0:  
-            save_model(log_path+'checkpoint.pt')
+            save_model(log_path+'checkpoint_v2.pt')
 
 
 def eval(epoch):
@@ -232,6 +238,7 @@ def eval(epoch):
     reference, candidate, source, alignments = [], [], [], []
     eval_data_gen=prepare_data('once','valid',2,2)
     # for raw_src, src, src_len, raw_tgt, tgt, tgt_len in validloader:
+    SDR_SUM=np.array([])
     while True:
     # for ___ in range(100):
         print '-'*30
@@ -256,10 +263,21 @@ def eval(epoch):
         if len(opt.gpus) > 1:
             samples, alignment = model.module.sample(src, src_len)
         else:
-            samples, alignment, hiddens, predicted_maps = model.beam_sample(src, src_len, dict_spk2idx, tgt, beam_size=config.beam_size)
+            samples, alignment, hiddens, predicted_masks = model.beam_sample(src, src_len, dict_spk2idx, tgt, beam_size=config.beam_size)
 
-        ss_loss = model.separation_loss(src, predicted_maps, feas_tgt)
+        # expand the raw mixed-features to topk channel.
+        siz=src.size()
+        assert len(siz)==3
+        topk=feas_tgt.size()[1]
+        x_input_map_multi=torch.unsqueeze(src,1).expand(siz[0],topk,siz[1],siz[2])
+
+        ss_loss = model.separation_loss(x_input_map_multi, predicted_masks, feas_tgt)
         print 'loss for ss,this batch:',ss_loss.data[0]
+
+        predicted_maps=predicted_masks*x_input_map_multi
+        utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data)
+        SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_output/'))
+        print 'SDR_aver_now:',SDR_SUM.mean()
 
         candidate += [convertToLabels(dict_idx2spk,s, dict_spk2idx['<EOS>']) for s in samples]
         # source += raw_src

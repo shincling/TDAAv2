@@ -61,11 +61,6 @@ def cross_entropy_loss(hidden_outputs, decoder, targets, criterion, config, sim_
     return loss, num_total, num_correct
 
 def ss_loss(config,x_input_map_multi,multi_mask,y_multi_map,loss_multi_func):
-    siz=x_input_map_multi.size()
-    assert len(siz)==3
-    topk=y_multi_map.size()[1]
-    x_input_map_multi=torch.unsqueeze(x_input_map_multi,1).expand(siz[0],topk,siz[1],siz[2])
-
     predict_multi_map=multi_mask*x_input_map_multi
     y_multi_map= Variable(y_multi_map)
 

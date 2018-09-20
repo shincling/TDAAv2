@@ -1,9 +1,13 @@
+#coding=utf8
 import os
 import csv
 import codecs
 import yaml
 import time
 import numpy as np
+import shutil
+import soundfile as sf
+import librosa
 
 from sklearn import metrics
 
@@ -104,3 +108,32 @@ def eval_metrics(reference, candidate, label_dict, log_path):
             'micro_f1': micro_f1,
             'micro_precision': micro_precision, 
             'micro_recall': micro_recall}
+
+def bss_eval(config, predict_multi_map,y_multi_map,y_map_gtruth,train_data):
+    dst='batch_output'
+    if os.path.exists(dst):
+        print " \ncleanup: " + dst + "/"
+        shutil.rmtree(dst)
+    os.makedirs(dst)
+
+    for sample_idx,each_sample in enumerate(train_data['multi_spk_wav_list']):
+        for each_spk in each_sample.keys():
+            this_spk=each_spk
+            wav_genTrue=each_sample[this_spk]
+            min_len = 39936
+            sf.write('batch_output/{}_{}_realTrue.wav'.format(sample_idx,this_spk),wav_genTrue[:min_len],config.FRAME_RATE,)
+
+    # 对于每个sample
+    sample_idx=0 #代表一个batch里的依次第几个
+    for each_y,each_pre,each_trueVector,spk_name in zip(y_multi_map,predict_multi_map,y_map_gtruth,train_data['aim_spkname']):
+        _mix_spec=train_data['mix_phase'][sample_idx]
+        phase_mix = np.angle(_mix_spec)
+        for idx,one_cha in enumerate(each_trueVector):
+            this_spk=one_cha
+            y_pre_map=each_pre[idx].data.cpu().numpy()
+            _pred_spec = y_pre_map * np.exp(1j * phase_mix)
+            wav_pre=librosa.core.spectrum.istft(np.transpose(_pred_spec), config.FRAME_SHIFT)
+            min_len =  len(wav_pre)
+            sf.write(dst+'/{}_{}_pre.wav'.format(sample_idx,this_spk),wav_pre[:min_len],config.FRAME_RATE,)
+        sf.write(dst+'/{}_True_mix.wav'.format(sample_idx),train_data['mix_wav'][sample_idx][:min_len],config.FRAME_RATE,)
+        sample_idx+=1
