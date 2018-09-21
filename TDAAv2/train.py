@@ -208,6 +208,7 @@ def train(epoch):
         # print 'totallllllllllll loss:',loss
         total_loss_sgm += sgm_loss.data[0]
         total_loss_ss += ss_loss.data[0]
+        total_loss += loss.data[0]
         report_total += num_total
         optim.step()
         updates += 1
@@ -218,8 +219,8 @@ def train(epoch):
 
         # continue
 
-        if 1 or updates % config.eval_interval == 0:
-            logging("time: %6.3f, epoch: %3d, updates: %8d, train loss: %6.3f\n"
+        if updates % config.eval_interval == 0:
+            logging("time: %6.3f, epoch: %3d, updates: %8d, train loss: %6.5f\n"
                     % (time.time()-start_time, epoch, updates, total_loss / report_total))
             print('evaluating after %d updates...\r' % updates)
             score = eval(epoch)
@@ -255,8 +256,11 @@ def eval(epoch):
         src = Variable(torch.from_numpy(eval_data['mix_feas']))
 
         raw_tgt = [sorted(spk.keys()) for spk in eval_data['multi_spk_fea_list']]
+        top_k=len(raw_tgt[0])
         # 要保证底下这几个都是longTensor(长整数）
         tgt = Variable(torch.from_numpy(np.array([[0]+[dict_spk2idx[spk] for spk in spks]+[dict_spk2idx['<EOS>']] for spks in raw_tgt],dtype=np.int))).transpose(0,1) #转换成数字，然后前后加开始和结束符号。
+        # tgt = Variable(torch.ones(top_k+2,config.batch_size)) # 这里随便给一个tgt，为了测试阶段tgt的名字无所谓其实。
+
         src_len = Variable(torch.LongTensor(config.batch_size).zero_()+mix_speech_len).unsqueeze(0)
         tgt_len = Variable(torch.LongTensor(config.batch_size).zero_()+len(eval_data['multi_spk_fea_list'][0])).unsqueeze(0)
         feas_tgt=models.rank_feas(raw_tgt,eval_data['multi_spk_fea_list']) #这里是目标的图谱
@@ -280,10 +284,12 @@ def eval(epoch):
 
         ss_loss = model.separation_loss(x_input_map_multi, predicted_masks, feas_tgt)
         print 'loss for ss,this batch:',ss_loss.data[0]
+        del ss_loss,hiddens
 
-        if batch_idx<=20: #only the former batches counts the SDR
+        if batch_idx<=(500/config.batch_size): #only the former batches counts the SDR
             predicted_maps=predicted_masks*x_input_map_multi
             utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data)
+            del predicted_maps,predicted_masks,x_input_map_multi
             SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_output/'))
             print 'SDR_aver_now:',SDR_SUM.mean()
 
@@ -293,6 +299,7 @@ def eval(epoch):
         print 'samples:',samples
         print 'can:{}, \nref:{}'.format(candidate[-1*config.batch_size:],reference[-1*config.batch_size:])
         alignments += [align for align in alignment]
+        batch_idx+=1
 
     if opt.unk:
         cands = []
