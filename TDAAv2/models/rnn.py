@@ -138,14 +138,14 @@ class rnn_decoder(nn.Module):
             attns = torch.stack(attns)
             return outputs, state
         else:
-            outputs, state, attns = [], init_state, []
+            outputs, state, attns, global_embs = [], init_state, [], []
             embs = self.embedding(inputs).split(1)
             max_time_step = len(embs)
-            emb = embs[0]
+            emb = embs[0] #第一步BOS的embedding.
             output, state = self.rnn(emb.squeeze(0), state)
             output, attn_weights = self.attention(output, contexts)
             output = self.dropout(output)
-            soft_score = F.softmax(self.linear(output))
+            soft_score = F.softmax(self.linear(output)) #第一步的概率分布也就是 bs,vocal这么大
             outputs += [output]
             attns += [attn_weights]
 
@@ -153,10 +153,11 @@ class rnn_decoder(nn.Module):
             a, b = self.embedding.weight.size()
 
             for i in range(max_time_step-1):
-                emb1 = torch.bmm(soft_score.unsqueeze(1), self.embedding.weight.expand((batch_size, a, b)))
-                emb2 = embs[i+1]
-                gamma = F.sigmoid(self.gated1(emb1.squeeze())+self.gated2(emb2.squeeze()))
+                emb1 = torch.bmm(soft_score.unsqueeze(1), self.embedding.weight.expand((batch_size, a, b))) #对vocab上所有emb按得分的加权平均
+                emb2 = embs[i+1] #下一步的输入词语的emb
+                gamma = F.sigmoid(self.gated1(emb1.squeeze())+self.gated2(emb2.squeeze())) #对应文中13式子
                 emb = gamma * emb1.squeeze() + (1 - gamma) * emb2.squeeze()
+                global_embs +=[emb] #注意这个global和上面的错一个step，相当与emb的第一个就是目标输出了之后的结果，跟上面那种Outputs保持一致
                 output, state = self.rnn(emb, state)
                 output, attn_weights = self.attention(output, contexts)
                 output = self.dropout(output)
@@ -164,8 +165,9 @@ class rnn_decoder(nn.Module):
                 outputs += [output]
                 attns += [attn_weights]
             outputs = torch.stack(outputs)
+            global_embs = torch.stack(global_embs)
             attns = torch.stack(attns)
-            return outputs, state
+            return outputs, state, global_embs
 
     def compute_score(self, hiddens):
         if self.score_fn.startswith('general'):
@@ -234,4 +236,4 @@ class rnn_decoder(nn.Module):
         if self.config.mask:
             if mask is not None:
                 output = output.scatter_(1, mask, -9999999999)
-        return output, state, attn_weigths, hidden
+        return output, state, attn_weigths, hidden, emb

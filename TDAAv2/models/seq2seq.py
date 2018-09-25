@@ -51,9 +51,15 @@ class seq2seq(nn.Module):
         # tgt = torch.index_select(tgt, dim=0, index=indices)
 
         contexts, state = self.encoder(src, lengths.data.tolist()) # context是：（max_len,batch_size,hidden_size×2方向）这么大
-        outputs, final_state = self.decoder(tgt[:-1], state, contexts.transpose(0, 1))
-        # 这里的outputs就是没个step输出的隐层向量,大小是len+1,bs,emb（注意是第一个词到 EOS的总共）
-        predicted_maps=self.ss_model(src,outputs[:-1,:],tgt[1:-1])
+        if not self.config.global_emb:
+            outputs, final_state = self.decoder(tgt[:-1], state, contexts.transpose(0, 1))
+            # 这里的outputs就是没个step输出的隐层向量,大小是len+1,bs,emb（注意是第一个词到 EOS的总共）
+            predicted_maps=self.ss_model(src,outputs[:-1,:],tgt[1:-1])
+        else:
+            outputs, final_state, global_embs = self.decoder(tgt[:-1], state, contexts.transpose(0, 1))
+            # 这里的outputs就是没个step输出的隐层向量,大小是len+1,bs,emb（注意是第一个词到 EOS的总共）
+            predicted_maps=self.ss_model(src,global_embs,tgt[1:-1])
+
         return outputs, tgt[1:], predicted_maps
 
     def sample(self, src, src_len):
@@ -132,7 +138,7 @@ class seq2seq(nn.Module):
                       .t().contiguous().view(-1))
 
             # Run one step.
-            output, decState, attn ,hidden = self.decoder.sample_one(inp, soft_score, decState, contexts, mask)
+            output, decState, attn ,hidden, emb = self.decoder.sample_one(inp, soft_score, decState, contexts, mask)
             soft_score = F.softmax(output)
             predicted = output.max(1)[1]
             if self.config.mask:
@@ -146,33 +152,40 @@ class seq2seq(nn.Module):
             output = unbottle(self.log_softmax(output))
             attn = unbottle(attn)
             hidden = unbottle(hidden)
+            emb = unbottle(emb)
                 # beam x tgt_vocab
 
             # (c) Advance each beam.
             # update state
             for j, b in enumerate(beam):
-                b.advance(output.data[:, j], attn.data[:, j], hidden.data[:,j])
+                b.advance(output.data[:, j], attn.data[:, j], hidden.data[:,j], emb.data[:,j])
                 b.beam_update(decState, j)
 
         # (3) Package everything up.
-        allHyps, allScores, allAttn, allHiddens = [], [], [], []
+        allHyps, allScores, allAttn, allHiddens, allEmbs= [], [], [], [], []
 
         ind=range(batch_size)
         for j in ind:
             b = beam[j]
             n_best = 1
             scores, ks = b.sortFinished(minimum=n_best)
-            hyps, attn, hiddens = [], [], []
+            hyps, attn, hiddens, embs = [], [], [], []
             for i, (times, k) in enumerate(ks[:n_best]):
-                hyp, att, hidden = b.getHyp(times, k)
+                hyp, att, hidden, emb = b.getHyp(times, k)
                 hyps.append(hyp)
                 attn.append(att.max(1)[1])
                 hiddens.append(hidden)
+                embs.append(emb)
             allHyps.append(hyps[0])
             allScores.append(scores[0])
             allAttn.append(attn[0])
             allHiddens.append(hiddens[0])
+            allEmbs.append(embs[0])
 
-        outputs=Variable(torch.stack(allHiddens,0).transpose(0,1)) # to [decLen, bs, dim]
-        predicted_maps=self.ss_model(src,outputs[:-1,:],tgt[1:-1])
+        if not self.config.global_emb:
+            outputs=Variable(torch.stack(allHiddens,0).transpose(0,1)) # to [decLen, bs, dim]
+            predicted_maps=self.ss_model(src,outputs[:-1,:],tgt[1:-1])
+        else:
+            ss_embs=Variable(torch.stack(allEmbs,0).transpose(0,1)) # to [decLen, bs, dim]
+            predicted_maps=self.ss_model(src,ss_embs[1:,:],tgt[1:-1])
         return allHyps, allAttn, allHiddens, predicted_maps
