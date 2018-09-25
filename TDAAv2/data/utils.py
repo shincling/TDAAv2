@@ -109,8 +109,8 @@ def eval_metrics(reference, candidate, label_dict, log_path):
             'micro_precision': micro_precision, 
             'micro_recall': micro_recall}
 
-def bss_eval(config, predict_multi_map,y_multi_map,y_map_gtruth,train_data):
-    dst='batch_output'
+def bss_eval(config, predict_multi_map,y_multi_map,y_map_gtruth,train_data,dst='batch_output'):
+    # dst='batch_output'
     if os.path.exists(dst):
         print " \ncleanup: " + dst + "/"
         shutil.rmtree(dst)
@@ -121,7 +121,7 @@ def bss_eval(config, predict_multi_map,y_multi_map,y_map_gtruth,train_data):
             this_spk=each_spk
             wav_genTrue=each_sample[this_spk]
             min_len = 39936
-            sf.write('batch_output/{}_{}_realTrue.wav'.format(sample_idx,this_spk),wav_genTrue[:min_len],config.FRAME_RATE,)
+            sf.write(dst+'/{}_{}_realTrue.wav'.format(sample_idx,this_spk),wav_genTrue[:min_len],config.FRAME_RATE,)
 
     # 对于每个sample
     sample_idx=0 #代表一个batch里的依次第几个
