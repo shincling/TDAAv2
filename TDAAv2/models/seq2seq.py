@@ -187,5 +187,8 @@ class seq2seq(nn.Module):
             predicted_maps=self.ss_model(src,outputs[:-1,:],tgt[1:-1])
         else:
             ss_embs=Variable(torch.stack(allEmbs,0).transpose(0,1)) # to [decLen, bs, dim]
-            predicted_maps=self.ss_model(src,ss_embs[1:,:],tgt[1:-1])
+            if not self.config.top1:
+                predicted_maps=self.ss_model(src,ss_embs[1:,:],tgt[1:-1])
+            else:
+                predicted_maps=self.ss_model(src,ss_embs[1:2],tgt[1:2])
         return allHyps, allAttn, allHiddens, predicted_maps

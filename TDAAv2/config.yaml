@@ -24,6 +24,7 @@ max_generator_batches:  32
 metric:  ['hamming_loss', 'micro_f1']
 shared_vocab:  0
 beam_size:  5
+top1: 1
 
 # 设定最小混叠说话人数，Minimum number of mixed speakers for training
 MIN_MIX :  2

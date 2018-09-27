@@ -31,7 +31,7 @@ parser.add_argument('-gpus', default=[6], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
 # parser.add_argument('-restore', default='best_f1_v1.pt', type=str,
 #                     help="restore checkpoint")
-parser.add_argument('-restore', default='best_f1_globalemb.pt', type=str,
+parser.add_argument('-restore', default='best_f1_globalemb2.pt', type=str,
                     help="restore checkpoint")
 # parser.add_argument('-restore', default=None, type=str,
 #                     help="restore checkpoint")
@@ -245,7 +245,7 @@ def train(epoch):
 def eval(epoch):
     model.eval()
     reference, candidate, source, alignments = [], [], [], []
-    eval_data_gen=prepare_data('once','valid',2,2)
+    eval_data_gen=prepare_data('once','test',2,2)
     # for raw_src, src, src_len, raw_tgt, tgt, tgt_len in validloader:
     SDR_SUM=np.array([])
     batch_idx=0
@@ -260,8 +260,8 @@ def eval(epoch):
         raw_tgt = [sorted(spk.keys()) for spk in eval_data['multi_spk_fea_list']]
         top_k=len(raw_tgt[0])
         # 要保证底下这几个都是longTensor(长整数）
-        tgt = Variable(torch.from_numpy(np.array([[0]+[dict_spk2idx[spk] for spk in spks]+[dict_spk2idx['<EOS>']] for spks in raw_tgt],dtype=np.int))).transpose(0,1) #转换成数字，然后前后加开始和结束符号。
-        # tgt = Variable(torch.ones(top_k+2,config.batch_size)) # 这里随便给一个tgt，为了测试阶段tgt的名字无所谓其实。
+        # tgt = Variable(torch.from_numpy(np.array([[0]+[dict_spk2idx[spk] for spk in spks]+[dict_spk2idx['<EOS>']] for spks in raw_tgt],dtype=np.int))).transpose(0,1) #转换成数字，然后前后加开始和结束符号。
+        tgt = Variable(torch.ones(top_k+2,config.batch_size)) # 这里随便给一个tgt，为了测试阶段tgt的名字无所谓其实。
 
         src_len = Variable(torch.LongTensor(config.batch_size).zero_()+mix_speech_len).unsqueeze(0)
         tgt_len = Variable(torch.LongTensor(config.batch_size).zero_()+len(eval_data['multi_spk_fea_list'][0])).unsqueeze(0)
@@ -277,6 +277,9 @@ def eval(epoch):
             samples, alignment = model.module.sample(src, src_len)
         else:
             samples, alignment, hiddens, predicted_masks = model.beam_sample(src, src_len, dict_spk2idx, tgt, beam_size=config.beam_size)
+
+        if config.top1:
+            predicted_masks=torch.cat([predicted_masks,1-predicted_masks],1)
 
         # '''
         # expand the raw mixed-features to topk channel.
