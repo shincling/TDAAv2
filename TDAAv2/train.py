@@ -27,7 +27,7 @@ parser = argparse.ArgumentParser(description='train.py')
 
 parser.add_argument('-config', default='config.yaml', type=str,
                     help="config file")
-parser.add_argument('-gpus', default=[6], nargs='+', type=int,
+parser.add_argument('-gpus', default=[3], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
 # parser.add_argument('-restore', default='best_f1_v1.pt', type=str,
 #                     help="restore checkpoint")
