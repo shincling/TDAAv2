@@ -15,7 +15,7 @@ emb_size:  256 #decoder部分的说话人的初始化emb
 encoder_hidden_size:  256
 decoder_hidden_size:  512
 num_layers:  2
-dropout:  0.5
+dropout:  0.0
 max_tgt_len:  25
 eval_interval:  300
 save_interval:  3000
@@ -23,11 +23,13 @@ max_generator_batches:  32
 metric:  ['hamming_loss', 'micro_f1']
 shared_vocab:  0
 beam_size:  5
-global_emb:  0
 top1: 0 #控制是否用top-1的方法来生产第二个通道
-ct_recu: 1 #控制是否采用att递减的ct构成
+ct_recu: 0 #控制是否采用att递减的ct构成
+#global_emb:  1
 #SPK_EMB_SIZE : 256 #注意这个东西需要和上面的spk_emb（如果是global_emb的话）,否认则就跟decoder的hidden_size对应
+global_emb:  0
 SPK_EMB_SIZE : 512 #注意这个东西需要和上面的spk_emb（如果是global_emb的话）,否认则就跟decoder的hidden_size对应
+schmidt: 1
 
 # 设定最小混叠说话人数，Minimum number of mixed speakers for training
 MIN_MIX :  2

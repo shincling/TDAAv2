@@ -223,7 +223,7 @@ def train(epoch):
 
         # continue
 
-        if 0 or updates % config.eval_interval == 0:
+        if 1 or updates % config.eval_interval == 0:
             logging("time: %6.3f, epoch: %3d, updates: %8d, train loss: %6.5f\n"
                     % (time.time()-start_time, epoch, updates, total_loss / report_total))
             print('evaluating after %d updates...\r' % updates)

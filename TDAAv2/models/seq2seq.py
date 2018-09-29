@@ -127,6 +127,7 @@ class seq2seq(nn.Module):
         
         mask = None
         soft_score = None
+        tmp_hiddens=[]
         for i in range(self.config.max_tgt_len):
 
             if all((b.done() for b in beam)):
@@ -138,7 +139,9 @@ class seq2seq(nn.Module):
                       .t().contiguous().view(-1))
 
             # Run one step.
-            output, decState, attn ,hidden, emb = self.decoder.sample_one(inp, soft_score, decState, contexts, mask)
+            output, decState, attn ,hidden, emb = self.decoder.sample_one(inp, soft_score, decState, tmp_hiddens, contexts, mask)
+            if self.config.schmidt:
+                tmp_hiddens+=[hidden]
             if self.config.ct_recu:
                 contexts= (1-attn).unsqueeze(-1)*contexts
             soft_score = F.softmax(output)
