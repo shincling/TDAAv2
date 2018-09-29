@@ -139,6 +139,8 @@ class seq2seq(nn.Module):
 
             # Run one step.
             output, decState, attn ,hidden, emb = self.decoder.sample_one(inp, soft_score, decState, contexts, mask)
+            if self.config.ct_recu:
+                contexts= (1-attn).unsqueeze(-1)*contexts
             soft_score = F.softmax(output)
             predicted = output.max(1)[1]
             if self.config.mask:

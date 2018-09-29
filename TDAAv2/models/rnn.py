@@ -132,6 +132,8 @@ class rnn_decoder(nn.Module):
                 output, state = self.rnn(emb.squeeze(0), state)
                 output, attn_weights = self.attention(output, contexts)
                 output = self.dropout(output)
+                if self.config.ct_recu:
+                    contexts= (1-attn_weights).unsqueeze(-1)*contexts
                 outputs += [output]
                 attns += [attn_weights]
             outputs = torch.stack(outputs)

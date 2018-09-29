@@ -29,10 +29,12 @@ parser.add_argument('-config', default='config.yaml', type=str,
                     help="config file")
 parser.add_argument('-gpus', default=[6], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
-# parser.add_argument('-restore', default='best_f1_v1.pt', type=str,
-#                     help="restore checkpoint")
-parser.add_argument('-restore', default='best_f1_globalemb2.pt', type=str,
+parser.add_argument('-restore', default='best_f1_v3.pt', type=str,
                     help="restore checkpoint")
+# parser.add_argument('-restore', default='best_f1_ct_v1.pt', type=str,
+#                     help="restore checkpoint")
+# parser.add_argument('-restore', default='best_f1_globalemb4.pt', type=str,
+#                     help="restore checkpoint")
 # parser.add_argument('-restore', default=None, type=str,
 #                     help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
@@ -221,7 +223,7 @@ def train(epoch):
 
         # continue
 
-        if 1 or updates % config.eval_interval == 0:
+        if 0 or updates % config.eval_interval == 0:
             logging("time: %6.3f, epoch: %3d, updates: %8d, train loss: %6.5f\n"
                     % (time.time()-start_time, epoch, updates, total_loss / report_total))
             print('evaluating after %d updates...\r' % updates)
@@ -276,7 +278,11 @@ def eval(epoch):
         if len(opt.gpus) > 1:
             samples, alignment = model.module.sample(src, src_len)
         else:
-            samples, alignment, hiddens, predicted_masks = model.beam_sample(src, src_len, dict_spk2idx, tgt, beam_size=config.beam_size)
+            try:
+                samples, alignment, hiddens, predicted_masks = model.beam_sample(src, src_len, dict_spk2idx, tgt, beam_size=config.beam_size)
+            except Exception,info:
+                print '**************Error occurs here************:', info
+                continue
 
         if config.top1:
             predicted_masks=torch.cat([predicted_masks,1-predicted_masks],1)
@@ -294,9 +300,9 @@ def eval(epoch):
 
         if batch_idx<=(500/config.batch_size): #only the former batches counts the SDR
             predicted_maps=predicted_masks*x_input_map_multi
-            utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_output1212')
+            utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_output2223234')
             del predicted_maps,predicted_masks,x_input_map_multi
-            SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_output1212/'))
+            SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_output2223234/'))
             print 'SDR_aver_now:',SDR_SUM.mean()
 
         # '''

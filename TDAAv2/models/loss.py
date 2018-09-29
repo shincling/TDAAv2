@@ -73,6 +73,7 @@ def ss_loss(config,x_input_map_multi,multi_mask,y_multi_map,loss_multi_func):
     print 'loss 1 eval, losssum eval : ',loss_multi_speech.data.cpu().numpy(),loss_multi_sum_speech.data.cpu().numpy()
     # loss_multi_speech=loss_multi_speech+0.5*loss_multi_sum_speech
     print 'evaling multi-abs norm this eval batch:',torch.abs(y_multi_map-predict_multi_map).norm().data.cpu().numpy()
-    print 'loss for separation part:',loss_multi_speech.data.cpu().numpy()
+    loss_multi_speech=loss_multi_speech+3*loss_multi_sum_speech
+    print 'loss for whole separation part:',loss_multi_speech.data.cpu().numpy()
     return loss_multi_speech
 
