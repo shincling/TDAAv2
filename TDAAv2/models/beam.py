@@ -1,3 +1,4 @@
+#coding=utf8
 import torch
 # import data.dict_spk2idx[as dict
 
@@ -29,13 +30,21 @@ class Beam(object):
         # The last hiddens(matrix) for each time.
         self.hiddens= []
 
+        # The last hiddens(matrix) for each time.
+        self.sch_hiddens= [] #用来存放史米特正则化的历史hidden embeddings的地方。
+
         # The last embs(matrix) for each time.
         self.embs= []
 
         # Time and k pair for finished.
         self.finished = []
         self.n_best = n_best
-
+    def updates_sch_embeddings(self,hiddens_this_step):
+        # 输入是历史列表，应是[[0,0,1],[[0,0,1],[0,1,0]], [[0,0,1],[0,1,0],[1,0,0]]]这种形式的，递归增加，但是同时记录上一次的这种
+        if len(self.sch_hiddens)==0:
+            self.sch_hiddens.append([hiddens_this_step])
+        else:
+            self.sch_hiddens.append(self.sch_hiddens[-1]+[hiddens_this_step])
 
     def getCurrentState(self):
         "Get the outputs for the current timestep."
@@ -66,7 +75,7 @@ class Beam(object):
                     beamLk[i] = -1e20
         else:
             beamLk = wordLk[0]
-        flatBeamLk = beamLk.view(-1)
+        flatBeamLk = beamLk.view(-1) #这个是把5个分支所有的路线拉到一起比了。
         bestScores, bestScoresId = flatBeamLk.topk(self.size, 0, True, True)
 
         self.allScores.append(self.scores)
@@ -79,6 +88,7 @@ class Beam(object):
         self.nextYs.append((bestScoresId - prevK * numWords))
         self.attn.append(attnOut.index_select(0, prevK))
         self.hiddens.append(hidden.index_select(0, prevK))
+        self.updates_sch_embeddings(hidden.index_select(0, prevK))
         self.embs.append(emb.index_select(0, prevK))
 
         for i in range(self.nextYs[-1].size(0)):

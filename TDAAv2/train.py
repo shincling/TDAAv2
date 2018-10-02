@@ -29,12 +29,14 @@ parser.add_argument('-config', default='config.yaml', type=str,
                     help="config file")
 parser.add_argument('-gpus', default=[3], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
-parser.add_argument('-restore', default='best_f1_v3.pt', type=str,
-                    help="restore checkpoint")
+# parser.add_argument('-restore', default='best_f1_v3.pt', type=str,
+#                     help="restore checkpoint")
 # parser.add_argument('-restore', default='best_f1_ct_v1.pt', type=str,
 #                     help="restore checkpoint")
 # parser.add_argument('-restore', default='best_f1_globalemb4.pt', type=str,
 #                     help="restore checkpoint")
+parser.add_argument('-restore', default='best_f1_schV0.pt', type=str,
+                    help="restore checkpoint")
 # parser.add_argument('-restore', default=None, type=str,
 #                     help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
@@ -247,7 +249,7 @@ def train(epoch):
 def eval(epoch):
     model.eval()
     reference, candidate, source, alignments = [], [], [], []
-    eval_data_gen=prepare_data('once','test',2,2)
+    eval_data_gen=prepare_data('once','valid',2,2)
     # for raw_src, src, src_len, raw_tgt, tgt, tgt_len in validloader:
     SDR_SUM=np.array([])
     batch_idx=0
@@ -300,9 +302,9 @@ def eval(epoch):
 
         if batch_idx<=(500/config.batch_size): #only the former batches counts the SDR
             predicted_maps=predicted_masks*x_input_map_multi
-            utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_output2223234')
+            utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_output_sch01')
             del predicted_maps,predicted_masks,x_input_map_multi
-            SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_output2223234/'))
+            SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_output_sch01/'))
             print 'SDR_aver_now:',SDR_SUM.mean()
 
         # '''

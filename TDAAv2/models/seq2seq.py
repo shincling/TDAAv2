@@ -137,9 +137,19 @@ class seq2seq(nn.Module):
             # Get all the pending current beam words and arrange for forward.
             inp = var(torch.stack([b.getCurrentState() for b in beam])
                       .t().contiguous().view(-1))
+            if self.config.schmidt and i>0:
+                assert len(beam[0].sch_hiddens[-1])==i
+                tmp_hiddens=[]
+                for xxx in range(i): #每一个sch之前的列表
+                    one_len=[]
+                    for bm_idx in range(beam_size):
+                        for bs_idx in range(batch_size):
+                            one_len.append(beam[bs_idx].sch_hiddens[-1][xxx][bm_idx,:])
+                    tmp_hiddens.append(var(torch.stack(one_len)))
 
             # Run one step.
             output, decState, attn ,hidden, emb = self.decoder.sample_one(inp, soft_score, decState, tmp_hiddens, contexts, mask)
+            # print "sample after decState:",decState[0].data.cpu().numpy().mean()
             if self.config.schmidt:
                 tmp_hiddens+=[hidden]
             if self.config.ct_recu:
@@ -164,7 +174,8 @@ class seq2seq(nn.Module):
             # update state
             for j, b in enumerate(beam):
                 b.advance(output.data[:, j], attn.data[:, j], hidden.data[:,j], emb.data[:,j])
-                b.beam_update(decState, j)
+                b.beam_update(decState, j) #这个函数更新了原来的decState,只不过不是用return，是直接赋值！
+            # print "beam after decState:",decState[0].data.cpu().numpy().mean()
 
         # (3) Package everything up.
         allHyps, allScores, allAttn, allHiddens, allEmbs= [], [], [], [], []
