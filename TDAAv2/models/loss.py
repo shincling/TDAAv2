@@ -62,6 +62,7 @@ def cross_entropy_loss(hidden_outputs, decoder, targets, criterion, config, sim_
 
 def ss_loss(config,x_input_map_multi,multi_mask,y_multi_map,loss_multi_func):
     predict_multi_map=multi_mask*x_input_map_multi
+    # predict_multi_map=Variable(y_multi_map)
     y_multi_map= Variable(y_multi_map)
 
     loss_multi_speech=loss_multi_func(predict_multi_map,y_multi_map)

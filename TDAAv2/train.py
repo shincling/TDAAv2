@@ -35,10 +35,10 @@ parser.add_argument('-gpus', default=[3], nargs='+', type=int,
 #                     help="restore checkpoint")
 # parser.add_argument('-restore', default='best_f1_globalemb4.pt', type=str,
 #                     help="restore checkpoint")
-parser.add_argument('-restore', default='best_f1_schV0.pt', type=str,
-                    help="restore checkpoint")
-# parser.add_argument('-restore', default=None, type=str,
+# parser.add_argument('-restore', default='best_f1_schV0.pt', type=str,
 #                     help="restore checkpoint")
+parser.add_argument('-restore', default=None, type=str,
+                    help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
                     help="Random seed")
 parser.add_argument('-model', default='seq2seq', type=str,
@@ -225,7 +225,7 @@ def train(epoch):
 
         # continue
 
-        if 1 or updates % config.eval_interval == 0:
+        if 0 or updates % config.eval_interval == 0:
             logging("time: %6.3f, epoch: %3d, updates: %8d, train loss: %6.5f\n"
                     % (time.time()-start_time, epoch, updates, total_loss / report_total))
             print('evaluating after %d updates...\r' % updates)
@@ -270,13 +270,22 @@ def eval(epoch):
         src_len = Variable(torch.LongTensor(config.batch_size).zero_()+mix_speech_len).unsqueeze(0)
         tgt_len = Variable(torch.LongTensor(config.batch_size).zero_()+len(eval_data['multi_spk_fea_list'][0])).unsqueeze(0)
         feas_tgt=models.rank_feas(raw_tgt,eval_data['multi_spk_fea_list']) #这里是目标的图谱
+        if config.WFM:
+            tmp_size=feas_tgt.size()
+            assert len(tmp_size)==4
+            feas_tgt_sum=torch.sum(feas_tgt,dim=1,keepdim=True)
+            feas_tgt_sum_square=(feas_tgt_sum*feas_tgt_sum).expand(tmp_size)
+            feas_tgt_square=feas_tgt*feas_tgt
+            WFM_mask=feas_tgt_square/feas_tgt_sum_square
+
         if use_cuda:
             src = src.cuda()
             tgt = tgt.cuda()
             src_len = src_len.cuda()
             tgt_len = tgt_len.cuda()
-            feas_tgt = feas_tgt.cuda()
-
+            # feas_tgt = feas_tgt.cuda()
+            if config.WFM:
+                WFM_mask= WFM_mask.cuda()
         if len(opt.gpus) > 1:
             samples, alignment = model.module.sample(src, src_len)
         else:
@@ -295,7 +304,8 @@ def eval(epoch):
         assert len(siz)==3
         topk=feas_tgt.size()[1]
         x_input_map_multi=torch.unsqueeze(src,1).expand(siz[0],topk,siz[1],siz[2])
-
+        if config.WFM:
+            feas_tgt=x_input_map_multi.data*WFM_mask
         ss_loss = model.separation_loss(x_input_map_multi, predicted_masks, feas_tgt)
         print 'loss for ss,this batch:',ss_loss.data[0]
         del ss_loss,hiddens
