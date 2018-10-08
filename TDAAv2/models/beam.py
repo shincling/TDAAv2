@@ -112,6 +112,14 @@ class Beam(object):
             sentStates = e[:, :, idx]
             sentStates.data.copy_(sentStates.data.index_select(1, positions))
 
+    def beam_update_context(self, state, idx):
+        positions = self.getCurrentOrigin()
+        e= state.unsqueeze(0)
+        a, br, len, d,  = e.size()
+        e = e.view(a, self.size, br // self.size, len, d)
+        sentStates = e[:, :, idx]
+        sentStates.data.copy_(sentStates.data.index_select(1, positions))
+
     def beam_update_hidden(self, state, idx):
         positions = self.getCurrentOrigin()
         e = state

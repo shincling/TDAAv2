@@ -153,7 +153,7 @@ class seq2seq(nn.Module):
             if self.config.schmidt:
                 tmp_hiddens+=[hidden]
             if self.config.ct_recu:
-                contexts= (1-attn).unsqueeze(-1)*contexts
+                contexts= (1-(attn>0.005).float()).unsqueeze(-1)*contexts
             soft_score = F.softmax(output)
             predicted = output.max(1)[1]
             if self.config.mask:
@@ -175,6 +175,8 @@ class seq2seq(nn.Module):
             for j, b in enumerate(beam):
                 b.advance(output.data[:, j], attn.data[:, j], hidden.data[:,j], emb.data[:,j])
                 b.beam_update(decState, j) #这个函数更新了原来的decState,只不过不是用return，是直接赋值！
+                if self.config.ct_recu:
+                    b.beam_update_context(contexts, j) #这个函数更新了原来的decState,只不过不是用return，是直接赋值！
             # print "beam after decState:",decState[0].data.cpu().numpy().mean()
 
         # (3) Package everything up.
