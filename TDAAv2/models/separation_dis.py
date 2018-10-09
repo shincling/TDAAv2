@@ -182,15 +182,16 @@ class SPEECH_EMBEDDING(nn.Module):
 
 class ADDJUST(nn.Module):
     # 这个模块是负责处理目标人的对应扰动的，进行一些偏移的调整
-    def __init__(self,hidden_units,embedding_size):
+    def __init__(self,config,hidden_units,embedding_size):
         super(ADDJUST,self).__init__()
+        self.config=config
         self.hidden_units=hidden_units
         self.emb_size=embedding_size
         self.layer=nn.Linear(hidden_units+embedding_size,embedding_size,bias=False)
 
     def forward(self,input_hidden,prob_emb):
         top_k_num=prob_emb.size()[1]
-        x=torch.mean(input_hidden,1).view(config.batch_size,1,self.hidden_units).expand(config.batch_size,top_k_num,self.hidden_units)
+        x=torch.mean(input_hidden,1).view(self.config.batch_size,1,self.hidden_units).expand(self.config.batch_size,top_k_num,self.hidden_units)
         can=torch.cat([x,prob_emb],dim=2)
         all=self.layer(can) # bs*num_labels（最多混合人个数）×Embedding的大小
         out=all
@@ -207,7 +208,9 @@ class SS(nn.Module):
         self.mix_hidden_layer_3d=MIX_SPEECH(config,speech_fre,mix_speech_len)
         # att_layer=ATTENTION(config.EMBEDDING_SIZE,'dot')
         self.att_speech_layer=ATTENTION(config.EMBEDDING_SIZE,config.SPK_EMB_SIZE,config.ATT_SIZE,'align')
-        # self.adjust_layer=ADDJUST(2*config.HIDDEN_UNITS,config.EMBEDDING_SIZE)
+        if self.config.is_SelfTune:
+            self.adjust_layer=ADDJUST(config,2*config.HIDDEN_UNITS,config.SPK_EMB_SIZE)
+            print 'Adopt adjust layer.'
         # self.dis_layer=Discriminator()
         # print self.att_speech_layer
         # print self.att_speech_layer.mode
@@ -220,6 +223,9 @@ class SS(nn.Module):
         top_k_num=targets.size()[0]
         mix_speech_hidden,mix_tmp_hidden=self.mix_hidden_layer_3d(mix_feas)
         mix_speech_multiEmbs=torch.transpose(hidden_outputs,0,1).contiguous()# bs*num_labels（最多混合人个数）×Embedding的大小
+        if self.config.is_SelfTune:
+            mix_adjust=self.adjust_layer(mix_tmp_hidden,mix_speech_multiEmbs)
+            mix_speech_multiEmbs=mix_adjust+mix_speech_multiEmbs
         mix_speech_hidden_5d=mix_speech_hidden.view(config.batch_size,1,self.mix_speech_len,self.speech_fre,config.EMBEDDING_SIZE)
         mix_speech_hidden_5d=mix_speech_hidden_5d.expand(config.batch_size,top_k_num,self.mix_speech_len,self.speech_fre,config.EMBEDDING_SIZE).contiguous()
         mix_speech_hidden_5d_last=mix_speech_hidden_5d.view(-1,self.mix_speech_len,self.speech_fre,config.EMBEDDING_SIZE)
