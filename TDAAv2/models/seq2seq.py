@@ -153,7 +153,7 @@ class seq2seq(nn.Module):
             if self.config.schmidt:
                 tmp_hiddens+=[hidden]
             if self.config.ct_recu:
-                contexts= (1-(attn>0.005).float()).unsqueeze(-1)*contexts
+                contexts= (1-(attn>0.003).float()).unsqueeze(-1)*contexts
             soft_score = F.softmax(output)
             predicted = output.max(1)[1]
             if self.config.mask:

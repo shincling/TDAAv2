@@ -135,7 +135,8 @@ class rnn_decoder(nn.Module):
                     output = models.schmidt(output,outputs)
                 output = self.dropout(output)
                 if self.config.ct_recu:
-                    contexts= (1-attn_weights).unsqueeze(-1)*contexts
+                    contexts= (1-(attn_weights>0.003).float()).unsqueeze(-1)*contexts
+                    # contexts= (1-attn_weights).unsqueeze(-1)*contexts
                 outputs += [output]
                 attns += [attn_weights]
             outputs = torch.stack(outputs)
