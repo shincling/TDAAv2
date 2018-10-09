@@ -141,7 +141,7 @@ class rnn_decoder(nn.Module):
                 attns += [attn_weights]
             outputs = torch.stack(outputs)
             attns = torch.stack(attns)
-            return outputs, state
+            return outputs, state, embs
         else:
             outputs, state, attns, global_embs = [], init_state, [], []
             embs = self.embedding(inputs).split(1)

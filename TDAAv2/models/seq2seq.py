@@ -52,9 +52,14 @@ class seq2seq(nn.Module):
 
         contexts, state = self.encoder(src, lengths.data.tolist()) # context是：（max_len,batch_size,hidden_size×2方向）这么大
         if not self.config.global_emb:
-            outputs, final_state = self.decoder(tgt[:-1], state, contexts.transpose(0, 1))
+            outputs, final_state, embs = self.decoder(tgt[:-1], state, contexts.transpose(0, 1))
             # 这里的outputs就是没个step输出的隐层向量,大小是len+1,bs,emb（注意是第一个词到 EOS的总共）
-            predicted_maps=self.ss_model(src,outputs[:-1,:],tgt[1:-1])
+            if not self.config.hidden_mix:
+                predicted_maps=self.ss_model(src,outputs[:-1,:],tgt[1:-1])
+            else:
+                mix=torch.cat((outputs[:-1,:],embs[1:]),dim=2)
+                predicted_maps=self.ss_model(src,mix,tgt[1:-1])
+
         else:
             outputs, final_state, global_embs = self.decoder(tgt[:-1], state, contexts.transpose(0, 1))
             # 这里的outputs就是没个step输出的隐层向量,大小是len+1,bs,emb（注意是第一个词到 EOS的总共）
