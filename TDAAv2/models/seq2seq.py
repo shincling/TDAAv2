@@ -207,7 +207,12 @@ class seq2seq(nn.Module):
 
         if not self.config.global_emb:
             outputs=Variable(torch.stack(allHiddens,0).transpose(0,1)) # to [decLen, bs, dim]
-            predicted_maps=self.ss_model(src,outputs[:-1,:],tgt[1:-1])
+            if not self.config.hidden_mix:
+                predicted_maps=self.ss_model(src,outputs[:-1,:],tgt[1:-1])
+            else:
+                ss_embs=Variable(torch.stack(allEmbs,0).transpose(0,1)) # to [decLen, bs, dim]
+                mix=torch.cat((outputs[:-1,:],ss_embs[1:]),dim=2)
+                predicted_maps=self.ss_model(src,mix,tgt[1:-1])
         else:
             ss_embs=Variable(torch.stack(allEmbs,0).transpose(0,1)) # to [decLen, bs, dim]
             if not self.config.top1:

@@ -27,15 +27,19 @@ parser = argparse.ArgumentParser(description='train.py')
 
 parser.add_argument('-config', default='config.yaml', type=str,
                     help="config file")
-parser.add_argument('-gpus', default=[3], nargs='+', type=int,
+parser.add_argument('-gpus', default=[0], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
-parser.add_argument('-restore', default='best_f1_v4.pt', type=str,
-                    help="restore checkpoint")
+# parser.add_argument('-restore', default='best_f1_v4.pt', type=str,
+#                     help="restore checkpoint")
 # parser.add_argument('-restore', default='best_f1_ct_v1.pt', type=str,
 #                     help="restore checkpoint")
 # parser.add_argument('-restore', default='best_f1_globalemb5.pt', type=str,
 #                     help="restore checkpoint")
-# parser.add_argument('-restore', default='best_schimit_v0.pt', type=str,
+# parser.add_argument('-restore', default='best_schimit_v2.pt', type=str,
+#                     help="restore checkpoint")
+parser.add_argument('-restore', default='best_schimit_mix_v0.pt', type=str,
+                    help="restore checkpoint")
+# parser.add_argument('-restore', default='best_f1_WFM600.pt', type=str,
 #                     help="restore checkpoint")
 # parser.add_argument('-restore', default=None, type=str,
 #                     help="restore checkpoint")
@@ -51,7 +55,7 @@ parser.add_argument('-notrain', default=False, type=bool,
                     help="train or not")
 parser.add_argument('-limit', default=0, type=int,
                     help="data limit")
-parser.add_argument('-log', default='', type=str,
+parser.add_argument('-log', default='plus', type=str,
                     help="log directory")
 parser.add_argument('-unk', default=False, type=bool,
                     help="replace unk")
@@ -312,9 +316,9 @@ def eval(epoch):
 
         if batch_idx<=(500/config.batch_size): #only the former batches counts the SDR
             predicted_maps=predicted_masks*x_input_map_multi
-            utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_output_sch01')
+            utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_outputtt_nomask_hiddenall')
             del predicted_maps,predicted_masks,x_input_map_multi
-            SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_output_sch01/'))
+            SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_outputtt_nomask_hiddenall/'))
             print 'SDR_aver_now:',SDR_SUM.mean()
             # raw_input('Press any key to continue......')
 
