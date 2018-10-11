@@ -33,12 +33,12 @@ parser.add_argument('-gpus', default=[0], nargs='+', type=int,
 #                     help="restore checkpoint")
 # parser.add_argument('-restore', default='best_f1_ct_v1.pt', type=str,
 #                     help="restore checkpoint")
-# parser.add_argument('-restore', default='best_f1_globalemb5.pt', type=str,
-#                     help="restore checkpoint")
+parser.add_argument('-restore', default='best_f1_globalemb6.pt', type=str,
+                    help="restore checkpoint")
 # parser.add_argument('-restore', default='best_schimit_v2.pt', type=str,
 #                     help="restore checkpoint")
-parser.add_argument('-restore', default='best_schimit_mix_v0.pt', type=str,
-                    help="restore checkpoint")
+# parser.add_argument('-restore', default='best_schimit_mix_v0.pt', type=str,
+#                     help="restore checkpoint")
 # parser.add_argument('-restore', default='best_f1_WFM600.pt', type=str,
 #                     help="restore checkpoint")
 # parser.add_argument('-restore', default=None, type=str,
@@ -55,7 +55,7 @@ parser.add_argument('-notrain', default=False, type=bool,
                     help="train or not")
 parser.add_argument('-limit', default=0, type=int,
                     help="data limit")
-parser.add_argument('-log', default='plus', type=str,
+parser.add_argument('-log', default='', type=str,
                     help="log directory")
 parser.add_argument('-unk', default=False, type=bool,
                     help="replace unk")
@@ -158,6 +158,7 @@ report_total, report_correct = 0, 0
 report_vocab, report_tot_vocab = 0, 0
 scores = [[] for metric in config.metric]
 scores = collections.OrderedDict(zip(config.metric, scores))
+best_SDR=0.0
 
 with open(opt.label_dict_file, 'r') as f:
     label_dict = json.load(f)
@@ -257,6 +258,7 @@ def eval(epoch):
     # for raw_src, src, src_len, raw_tgt, tgt, tgt_len in validloader:
     SDR_SUM=np.array([])
     batch_idx=0
+    global best_SDR
     while True:
     # for ___ in range(100):
         print '-'*30
@@ -321,6 +323,10 @@ def eval(epoch):
             SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_outputtt_nomask_hiddenall/'))
             print 'SDR_aver_now:',SDR_SUM.mean()
             # raw_input('Press any key to continue......')
+        if SDR_SUM.mean()>best_SDR:
+            print 'Best SDR from {}---->{}'.format(best_SDR,SDR_SUM.mean())
+            best_SDR=SDR_SUM.mean()
+            save_model(log_path+'checkpoint_bestSDR{}.pt'.format(best_SDR))
 
         # '''
         candidate += [convertToLabels(dict_idx2spk,s, dict_spk2idx['<EOS>']) for s in samples]
