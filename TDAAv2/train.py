@@ -33,10 +33,10 @@ parser.add_argument('-gpus', default=[0], nargs='+', type=int,
 #                     help="restore checkpoint")
 # parser.add_argument('-restore', default='best_f1_ct_v1.pt', type=str,
 #                     help="restore checkpoint")
-parser.add_argument('-restore', default='best_f1_globalemb6.pt', type=str,
-                    help="restore checkpoint")
-# parser.add_argument('-restore', default='best_schimit_v2.pt', type=str,
+# parser.add_argument('-restore', default='best_f1_globalemb6.pt', type=str,
 #                     help="restore checkpoint")
+parser.add_argument('-restore', default='best_schimit_v3.pt', type=str,
+                    help="restore checkpoint")
 # parser.add_argument('-restore', default='best_schimit_mix_v0.pt', type=str,
 #                     help="restore checkpoint")
 # parser.add_argument('-restore', default='best_f1_WFM600.pt', type=str,
@@ -254,7 +254,7 @@ def train(epoch):
 def eval(epoch):
     model.eval()
     reference, candidate, source, alignments = [], [], [], []
-    eval_data_gen=prepare_data('once','test',2,2)
+    eval_data_gen=prepare_data('once','valid',2,2)
     # for raw_src, src, src_len, raw_tgt, tgt, tgt_len in validloader:
     SDR_SUM=np.array([])
     batch_idx=0
@@ -318,15 +318,15 @@ def eval(epoch):
 
         if batch_idx<=(500/config.batch_size): #only the former batches counts the SDR
             predicted_maps=predicted_masks*x_input_map_multi
-            utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_outputtt_nomask_hiddenall')
+            utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_outputtt1249')
             del predicted_maps,predicted_masks,x_input_map_multi
-            SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_outputtt_nomask_hiddenall/'))
+            SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_outputtt1249/'))
             print 'SDR_aver_now:',SDR_SUM.mean()
             # raw_input('Press any key to continue......')
-        if SDR_SUM.mean()>best_SDR:
+        elif not best_SDR and SDR_SUM.mean()>best_SDR: #only record the best SDR once.
             print 'Best SDR from {}---->{}'.format(best_SDR,SDR_SUM.mean())
             best_SDR=SDR_SUM.mean()
-            save_model(log_path+'checkpoint_bestSDR{}.pt'.format(best_SDR))
+            # save_model(log_path+'checkpoint_bestSDR{}.pt'.format(best_SDR))
 
         # '''
         candidate += [convertToLabels(dict_idx2spk,s, dict_spk2idx['<EOS>']) for s in samples]
