@@ -157,20 +157,20 @@ class MIX_SPEECH_CNN(nn.Module):
         self.bn15=nn.BatchNorm2d(8)
 
     def forward(self, x):
-        print 'speech input size:',x.size()
+        # print 'speech input size:',x.size()
         assert len(x.size())==3
         x=x.unsqueeze(1)
-        print '\nSpeech layer log:'
+        # print '\nSpeech layer log:'
         x = x.contiguous()
         for idx in range(self.num_cnns):
             cnn_layer=eval('self.cnn{}'.format(idx+1))
             bn_layer=eval('self.bn{}'.format(idx+1))
             x=F.relu(cnn_layer(x))
             x=bn_layer(x)
-            print 'speech shape after CNNs:',idx,'', x.size()
+            # print 'speech shape after CNNs:',idx,'', x.size()
 
         out=x.transpose(1,3).transpose(1,2).contiguous()
-        print 'speech output size:',out.size()
+        # print 'speech output size:',out.size()
         return out,out
 
 
