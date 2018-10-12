@@ -76,10 +76,10 @@ class ATTENTION(nn.Module):
         # self.align_hidden_size=hidden_size #align模式下的隐层大小，暂时取跟原来一致的
         self.align_hidden_size=align_hidden_size#align模式下的隐层大小，暂时取跟原来一致的
         self.mode=mode
-        self.Linear_1=nn.Linear(self.hidden_size,self.align_hidden_size,bias=False)
+        self.Linear_1=nn.Linear(self.hidden_size,self.align_hidden_size)
         # self.Linear_2=nn.Linear(hidden_sizedw,self.align_hidden_size,bias=False)
-        self.Linear_2=nn.Linear(self.query_size,self.align_hidden_size,bias=False)
-        self.Linear_3=nn.Linear(self.align_hidden_size,1,bias=False)
+        self.Linear_2=nn.Linear(self.query_size,self.align_hidden_size)
+        self.Linear_3=nn.Linear(self.align_hidden_size)
 
     def forward(self,mix_hidden,query):
         #todo:这个要弄好，其实也可以直接抛弃memory来进行attention | DONE
@@ -114,6 +114,51 @@ class ATTENTION(nn.Module):
         else:
             print 'NO this attention methods.'
             raise IndexError
+
+class ATTENTION_CNN(nn.Module):
+    def __init__(self,config,speech_fre):
+        self.fre=speech_fre#应该是301
+        super(ATTENTION_CNN, self).__init__()
+        self.lstm_layer = nn.LSTM(
+            input_size=(8*speech_fre+config.SPK_EMB_SIZE),
+            hidden_size=config.LSTM_HIDDEN_UNITS,
+            num_layers=config.LSTM_NUM_LAYERS,
+            batch_first=True,
+            bidirectional=True
+        )
+        self.fc_layers1=nn.Linear(2*config.LSTM_HIDDEN_UNITS,config.FC_UNITS)
+        self.fc_layers2=nn.Linear(config.FC_UNITS,config.FC_UNITS)
+        self.fc_layers3=nn.Linear(config.FC_UNITS,config.FC_UNITS)
+        self.final_layer=nn.Linear(config.FC_UNITS,speech_fre)
+
+    def forward(self, mix_hidden, query):
+        # todo:这个要弄好，其实也可以直接抛弃memory来进行attention | DONE
+        mix_shape=mix_hidden.size()#应该是bs*301*(8*257)的东西
+        query_shape=query.size()#应该是bs*topk*301*256的东西
+        top_k=query_shape[1]
+        BATCH_SIZE = mix_hidden.size()[0]
+        # assert query.size()==(BATCH_SIZE,self.hidden_size)
+        # assert mix_hidden.size()[-1]==self.hidden_size
+        # mix_hidden：bs,max_len,fre,hidden_size  query:bs,hidden_size
+
+        mix_hidden = mix_hidden.view(BATCH_SIZE, 1,  mix_shape[1], mix_shape[2]).expand(BATCH_SIZE,top_k,mix_shape[1],mix_shape[2])
+        mix_hidden = mix_hidden.contiguous().view(BATCH_SIZE*top_k, mix_shape[1], mix_shape[2]) #现在mix_hidden变成了(bs*topk)*301*(8*257)
+        query=query.view(BATCH_SIZE*top_k,query_shape[2],query_shape[3]) #现在query变成了(bs*topk)*301*256
+        # print mix_hidden
+        # print '\n',query
+        multi_moda=torch.cat((mix_hidden,query),dim=2) #得到了拼接好的特征矩阵
+
+        multi_moda=self.lstm_layer(multi_moda)[0]
+        print 'after the lstm size:',multi_moda.size()
+        multi_moda=F.relu(self.fc_layers1(multi_moda))
+        multi_moda=F.relu(self.fc_layers2(multi_moda))
+        multi_moda=F.relu(self.fc_layers3(multi_moda))
+
+        print 'The size of last embedding:',multi_moda.size() #应该是(bs*topk),301,600
+        results=self.final_layer(multi_moda).view(BATCH_SIZE,top_k,mix_shape[1],129)
+        print 'The size of output:',results.size() #应该是(bs*topk),301,600
+        results=F.sigmoid(results)
+        return results
 
 class MIX_SPEECH_CNN(nn.Module):
     def __init__(self,config,input_fre,mix_speech_len):
@@ -264,13 +309,8 @@ class SS(nn.Module):
         print 'Begin to build the maim model for speech speration part.'
         if config.speech_cnn_net:
             self.mix_hidden_layer_3d=MIX_SPEECH_CNN(config,speech_fre,mix_speech_len)
-        else:
-            self.mix_hidden_layer_3d=MIX_SPEECH(config,speech_fre,mix_speech_len)
-        # att_layer=ATTENTION(config.EMBEDDING_SIZE,'dot')
-        self.att_speech_layer=ATTENTION(config.EMBEDDING_SIZE,config.SPK_EMB_SIZE,config.ATT_SIZE,'align')
-        if self.config.is_SelfTune:
-            self.adjust_layer=ADDJUST(config,2*config.HIDDEN_UNITS,config.SPK_EMB_SIZE)
-            print 'Adopt adjust layer.'
+            self.att_speech_layer=ATTENTION_CNN(config,speech_fre)
+
         # self.dis_layer=Discriminator()
         # print self.att_speech_layer
         # print self.att_speech_layer.mode
@@ -281,17 +321,15 @@ class SS(nn.Module):
     def forward(self, mix_feas, hidden_outputs, targets):
         config=self.config
         top_k_num=targets.size()[0]
-        mix_speech_hidden,mix_tmp_hidden=self.mix_hidden_layer_3d(mix_feas)
-        mix_speech_multiEmbs=torch.transpose(hidden_outputs,0,1).contiguous()# bs*num_labels（最多混合人个数）×Embedding的大小
-        if self.config.is_SelfTune:
-            mix_adjust=self.adjust_layer(mix_tmp_hidden,mix_speech_multiEmbs)
-            mix_speech_multiEmbs=mix_adjust+mix_speech_multiEmbs
-        mix_speech_hidden_5d=mix_speech_hidden.view(config.batch_size,1,self.mix_speech_len,self.speech_fre,config.EMBEDDING_SIZE)
-        mix_speech_hidden_5d=mix_speech_hidden_5d.expand(config.batch_size,top_k_num,self.mix_speech_len,self.speech_fre,config.EMBEDDING_SIZE).contiguous()
-        mix_speech_hidden_5d_last=mix_speech_hidden_5d.view(-1,self.mix_speech_len,self.speech_fre,config.EMBEDDING_SIZE)
-        att_multi_speech=self.att_speech_layer(mix_speech_hidden_5d_last,mix_speech_multiEmbs.view(-1,config.SPK_EMB_SIZE))
-        att_multi_speech=att_multi_speech.view(config.batch_size,top_k_num,self.mix_speech_len,self.speech_fre) # bs,num_labels,len,fre这个东西
-        multi_mask=att_multi_speech
+        if config.speech_cnn_net:
+            mix_speech_hidden,mix_tmp_hidden=self.mix_hidden_layer_3d(mix_feas)
+            mix_speech_hidden=mix_speech_hidden.view(config.batch_size,self.mix_speech_len,-1)
+            mix_speech_multiEmbs=torch.transpose(hidden_outputs,0,1).contiguous()# bs*num_labels（最多混合人个数）×Embedding的大小
+            mix_speech_multiEmbs=mix_speech_multiEmbs.unsqueeze(2).expand(config.batch_size,top_k_num,self.mix_speech_len,config.SPK_EMB_SIZE).contiguous()
+            att_multi_speech=self.att_speech_layer(mix_speech_hidden,mix_speech_multiEmbs)
+            att_multi_speech=att_multi_speech.view(config.batch_size,top_k_num,self.mix_speech_len,self.speech_fre) # bs,num_labels,len,fre这个东西
+            multi_mask=att_multi_speech
+
         return multi_mask
 
 
