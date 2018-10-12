@@ -35,14 +35,14 @@ parser.add_argument('-gpus', default=[0], nargs='+', type=int,
 #                     help="restore checkpoint")
 # parser.add_argument('-restore', default='best_f1_globalemb6.pt', type=str,
 #                     help="restore checkpoint")
-parser.add_argument('-restore', default='best_schimit_v3.pt', type=str,
-                    help="restore checkpoint")
+# parser.add_argument('-restore', default='best_schimit_v4.pt', type=str,
+#                     help="restore checkpoint")
 # parser.add_argument('-restore', default='best_schimit_mix_v0.pt', type=str,
 #                     help="restore checkpoint")
-# parser.add_argument('-restore', default='best_f1_WFM600.pt', type=str,
+# parser.add_argument('-restore', default='best_f1_WFM600_v1.pt', type=str,
 #                     help="restore checkpoint")
-# parser.add_argument('-restore', default=None, type=str,
-#                     help="restore checkpoint")
+parser.add_argument('-restore', default=None, type=str,
+                    help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
                     help="Random seed")
 parser.add_argument('-model', default='seq2seq', type=str,
@@ -318,9 +318,9 @@ def eval(epoch):
 
         if batch_idx<=(500/config.batch_size): #only the former batches counts the SDR
             predicted_maps=predicted_masks*x_input_map_multi
-            utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_outputtt1249')
+            utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_output1t2')
             del predicted_maps,predicted_masks,x_input_map_multi
-            SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_outputtt1249/'))
+            SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_output1t2/'))
             print 'SDR_aver_now:',SDR_SUM.mean()
             # raw_input('Press any key to continue......')
         elif not best_SDR and SDR_SUM.mean()>best_SDR: #only record the best SDR once.

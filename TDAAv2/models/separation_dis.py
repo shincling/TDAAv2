@@ -115,6 +115,63 @@ class ATTENTION(nn.Module):
             print 'NO this attention methods.'
             raise IndexError
 
+class MIX_SPEECH_CNN(nn.Module):
+    def __init__(self,config,input_fre,mix_speech_len):
+        super(MIX_SPEECH_CNN, self).__init__()
+        self.input_fre=input_fre
+        self.mix_speech_len=mix_speech_len
+        self.config=config
+
+        self.cnn1=nn.Conv2d(1,96,(1,7),stride=1,padding=(0,3),dilation=(1,1))
+        self.cnn2=nn.Conv2d(96,96,(7,1),stride=1,padding=(3,0),dilation=(1,1))
+        self.cnn3=nn.Conv2d(96,96,(5,5),stride=1,padding=(2,2),dilation=(1,1))
+        self.cnn4=nn.Conv2d(96,96,(5,5),stride=1,padding=(4,2),dilation=(2,1))
+        self.cnn5=nn.Conv2d(96,96,(5,5),stride=1,padding=(8,2),dilation=(4,1))
+
+        self.cnn6=nn.Conv2d(96,96,(5,5),stride=1,padding=(16,2),dilation=(8,1))
+        self.cnn7=nn.Conv2d(96,96,(5,5),stride=1,padding=(32,2),dilation=(16,1))
+        self.cnn8=nn.Conv2d(96,96,(5,5),stride=1,padding=(64,2),dilation=(32,1))
+        self.cnn9=nn.Conv2d(96,96,(5,5),stride=1,padding=(2,2),dilation=(1,1))
+        self.cnn10=nn.Conv2d(96,96,(5,5),stride=1,padding=(4,4),dilation=(2,2))
+
+        self.cnn11=nn.Conv2d(96,96,(5,5),stride=1,padding=(8,8),dilation=(4,4))
+        self.cnn12=nn.Conv2d(96,96,(5,5),stride=1,padding=(16,16),dilation=(8,8))
+        self.cnn13=nn.Conv2d(96,96,(5,5),stride=1,padding=(32,32),dilation=(16,16))
+        self.cnn14=nn.Conv2d(96,96,(5,5),stride=1,padding=(64,64),dilation=(32,32))
+        self.cnn15=nn.Conv2d(96,8,(1,1),stride=1,padding=(0,0),dilation=(1,1))
+        self.num_cnns=15
+        self.bn1=nn.BatchNorm2d(96)
+        self.bn2=nn.BatchNorm2d(96)
+        self.bn3=nn.BatchNorm2d(96)
+        self.bn4=nn.BatchNorm2d(96)
+        self.bn5=nn.BatchNorm2d(96)
+        self.bn6=nn.BatchNorm2d(96)
+        self.bn7=nn.BatchNorm2d(96)
+        self.bn8=nn.BatchNorm2d(96)
+        self.bn9=nn.BatchNorm2d(96)
+        self.bn10=nn.BatchNorm2d(96)
+        self.bn11=nn.BatchNorm2d(96)
+        self.bn12=nn.BatchNorm2d(96)
+        self.bn13=nn.BatchNorm2d(96)
+        self.bn14=nn.BatchNorm2d(96)
+        self.bn15=nn.BatchNorm2d(8)
+
+    def forward(self, x):
+        print 'speech input size:',x.size()
+        assert len(x.size())==3
+        x=x.unsqueeze(1)
+        print '\nSpeech layer log:'
+        x = x.contiguous()
+        for idx in range(self.num_cnns):
+            cnn_layer=eval('self.cnn{}'.format(idx+1))
+            bn_layer=eval('self.bn{}'.format(idx+1))
+            x=F.relu(cnn_layer(x))
+            x=bn_layer(x)
+            print 'speech shape after CNNs:',idx,'', x.size()
+
+        out=x.transpose(1,3).transpose(1,2).contiguous()
+        print 'speech output size:',out.size()
+        return out,out
 
 
 class MIX_SPEECH(nn.Module):
@@ -205,7 +262,10 @@ class SS(nn.Module):
         self.mix_speech_len=mix_speech_len
         self.num_labels=num_labels
         print 'Begin to build the maim model for speech speration part.'
-        self.mix_hidden_layer_3d=MIX_SPEECH(config,speech_fre,mix_speech_len)
+        if config.speech_cnn_net:
+            self.mix_hidden_layer_3d=MIX_SPEECH_CNN(config,speech_fre,mix_speech_len)
+        else:
+            self.mix_hidden_layer_3d=MIX_SPEECH(config,speech_fre,mix_speech_len)
         # att_layer=ATTENTION(config.EMBEDDING_SIZE,'dot')
         self.att_speech_layer=ATTENTION(config.EMBEDDING_SIZE,config.SPK_EMB_SIZE,config.ATT_SIZE,'align')
         if self.config.is_SelfTune:
