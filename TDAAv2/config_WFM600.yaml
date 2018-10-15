@@ -1,10 +1,10 @@
 data:  './data/data/save_data'
 log:  './data/data/log/'
-epoch:  300
-batch_size: 12
+epoch:  200
+batch_size: 16
 param_init:  0.1
 optim:  'adam'
-learning_rate:  0.001
+learning_rate:  0.0001
 max_grad_norm:  10
 learning_rate_decay:  0.5
 mask:  1
@@ -15,14 +15,14 @@ emb_size:  256 #decoder部分的说话人的初始化emb
 encoder_hidden_size:  256
 decoder_hidden_size:  512
 num_layers:  2
-dropout:  0.5
+dropout:  0.0
 max_tgt_len:  25
 eval_interval:  600
 save_interval:  3000
 max_generator_batches:  32
 metric:  ['hamming_loss', 'micro_f1']
 shared_vocab:  0
-WFM: 0
+WFM: 1
 beam_size:  5
 top1: 0 #控制是否用top-1的方法来生产第二个通道
 ct_recu: 0 #控制是否采用att递减的ct构成
@@ -35,7 +35,7 @@ hidden_mix: 0 #这个模式是不采用global emb的时候，把hidden和下一�
 #SPK_EMB_SIZE : 768 #512+256 注意这个东西需要和上面的spk_emb（如果是global_emb的话）,否认则就跟decoder的hidden_size对应
 schmidt: 0
 is_SelfTune :  0
-speech_cnn_net: 1 #是否采用CNN的结构来抽取
+speech_cnn_net: 0 #是否采用CNN的结构来抽取
 
 # 设定最小混叠说话人数，Minimum number of mixed speakers for training
 MIN_MIX :  2
@@ -51,13 +51,7 @@ MODE :  1
 # DATASET :  'GRID'
 DATASET :  'WSJ0'
 #　组件
-is_ComlexMask :  0
-
-LSTM_HIDDEN_UNITS :  200 # CNN里的BLSTM的隐层单元个数
-LSTM_NUM_LAYERS :  1 # CNN里的BLSTM的层数
-FC_UNITS : 600
-
-AUGMENT_DATA :  0
+is_ComlexMask :  1
 
 # 是否在训练阶段用Ground Truth的分类结果
 Ground_truth :  1
@@ -65,15 +59,16 @@ Ground_truth :  1
 Comm_with_Memory: 1
 Comm_with_Memory: 0
 # DNN/RNN隐层的维度 hidden units
-HIDDEN_UNITS :  300
+HIDDEN_UNITS :  600
 # DNN/RNN层数
 NUM_LAYERS :  2
 # Embedding大小,主要是给语音第三维那部分的
 #EMBEDDING_SIZE :  100
-#EMBEDDING_SIZE :  50
-EMBEDDING_SIZE :  8
+EMBEDDING_SIZE :  50
+#EMBEDDING_SIZE :  8
 ATT_SIZE : 100 # 这个是SS里面参数ATT的最外层的统一的大小
 # 是否丰富数据
+AUGMENT_DATA :  0
 # set the max epoch of training
 MAX_EPOCH :  600
 # epoch size
@@ -84,7 +79,7 @@ FRAME_RATE :  8000
 # FRAME_LENGTH :  int(0.032 * FRAME_RATE)
 FRAME_LENGTH : 256
 # 帧移(ms)
-FRAME_SHIFT :  128
+FRAME_SHIFT :  64
 # 是否shuffle_batch
 SHUFFLE_BATCH :  1
 # 设定speech multi acc的阈值alpha

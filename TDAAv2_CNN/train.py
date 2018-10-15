@@ -27,7 +27,7 @@ parser = argparse.ArgumentParser(description='train.py')
 
 parser.add_argument('-config', default='config.yaml', type=str,
                     help="config file")
-parser.add_argument('-gpus', default=[1], nargs='+', type=int,
+parser.add_argument('-gpus', default=[4], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
 # parser.add_argument('-restore', default='best_f1_v4.pt', type=str,
 #                     help="restore checkpoint")
@@ -35,14 +35,10 @@ parser.add_argument('-gpus', default=[1], nargs='+', type=int,
 #                     help="restore checkpoint")
 # parser.add_argument('-restore', default='best_f1_globalemb6.pt', type=str,
 #                     help="restore checkpoint")
-# parser.add_argument('-restore', default='best_schimit_v4.pt', type=str,
-#                     help="restore checkpoint")
-# parser.add_argument('-restore', default='best_schimit_mix_v0.pt', type=str,
-#                     help="restore checkpoint")
-# parser.add_argument('-restore', default='best_f1_WFM600_v1.pt', type=str,
-#                     help="restore checkpoint")
-parser.add_argument('-restore', default=None, type=str,
+parser.add_argument('-restore', default='best_cnn_v0.pt', type=str,
                     help="restore checkpoint")
+# parser.add_argument('-restore', default=None, type=str,
+#                     help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
                     help="Random seed")
 parser.add_argument('-model', default='seq2seq', type=str,
@@ -230,7 +226,7 @@ def train(epoch):
 
         # continue
 
-        if 0 or updates % config.eval_interval == 0:
+        if 0 or (updates % config.eval_interval == 0) and epoch>8 :
             logging("time: %6.3f, epoch: %3d, updates: %8d, train loss: %6.5f\n"
                     % (time.time()-start_time, epoch, updates, total_loss / report_total))
             print('evaluating after %d updates...\r' % updates)
@@ -254,7 +250,9 @@ def train(epoch):
 def eval(epoch):
     model.eval()
     reference, candidate, source, alignments = [], [], [], []
-    eval_data_gen=prepare_data('once','valid',2,2)
+    valid_mode='test'
+    print 'Valid or Test:',valid_mode
+    eval_data_gen=prepare_data('once',valid_mode,2,2)
     # for raw_src, src, src_len, raw_tgt, tgt, tgt_len in validloader:
     SDR_SUM=np.array([])
     batch_idx=0
