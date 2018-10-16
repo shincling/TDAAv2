@@ -27,22 +27,27 @@ parser = argparse.ArgumentParser(description='train.py')
 
 parser.add_argument('-config', default='config.yaml', type=str,
                     help="config file")
-parser.add_argument('-gpus', default=[0], nargs='+', type=int,
+# parser.add_argument('-config', default='config_mix.yaml', type=str,
+#                     help="config file")
+# parser.add_argument('-restore', default='best_schimit_mix_v1.pt', type=str,
+#                     help="restore checkpoint")
+
+# parser.add_argument('-config', default='config_WFM600.yaml', type=str,
+#                     help="config file")
+# parser.add_argument('-restore', default='best_f1_WFM_v2.pt', type=str,
+#                     help="restore checkpoint")
+parser.add_argument('-gpus', default=[7], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
 # parser.add_argument('-restore', default='best_f1_v4.pt', type=str,
 #                     help="restore checkpoint")
 # parser.add_argument('-restore', default='best_f1_ct_v1.pt', type=str,
 #                     help="restore checkpoint")
-# parser.add_argument('-restore', default='best_f1_globalemb6.pt', type=str,
-#                     help="restore checkpoint")
-# parser.add_argument('-restore', default='best_schimit_v4.pt', type=str,
-#                     help="restore checkpoint")
-# parser.add_argument('-restore', default='best_schimit_mix_v0.pt', type=str,
-#                     help="restore checkpoint")
-# parser.add_argument('-restore', default='best_f1_WFM600_v1.pt', type=str,
-#                     help="restore checkpoint")
-parser.add_argument('-restore', default=None, type=str,
+parser.add_argument('-restore', default='best_f1_globalemb7.pt', type=str,
                     help="restore checkpoint")
+# parser.add_argument('-restore', default='best_schimit_v6.pt', type=str,
+#                     help="restore checkpoint")
+# parser.add_argument('-restore', default=None, type=str,
+#                     help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
                     help="Random seed")
 parser.add_argument('-model', default='seq2seq', type=str,
@@ -230,7 +235,7 @@ def train(epoch):
 
         # continue
 
-        if 1 or updates % config.eval_interval == 0:
+        if 0 or updates % config.eval_interval == 0:
             logging("time: %6.3f, epoch: %3d, updates: %8d, train loss: %6.5f\n"
                     % (time.time()-start_time, epoch, updates, total_loss / report_total))
             print('evaluating after %d updates...\r' % updates)
@@ -318,9 +323,10 @@ def eval(epoch):
 
         if batch_idx<=(500/config.batch_size): #only the former batches counts the SDR
             predicted_maps=predicted_masks*x_input_map_multi
-            utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_output1t2')
+            # predicted_maps=Variable(feas_tgt)
+            utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_output3wade')
             del predicted_maps,predicted_masks,x_input_map_multi
-            SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_output1t2/'))
+            SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_output3wade/'))
             print 'SDR_aver_now:',SDR_SUM.mean()
             # raw_input('Press any key to continue......')
         elif not best_SDR and SDR_SUM.mean()>best_SDR: #only record the best SDR once.
