@@ -121,7 +121,8 @@ def bss_eval(config, predict_multi_map,y_multi_map,y_map_gtruth,train_data,dst='
             this_spk=each_spk
             wav_genTrue=each_sample[this_spk]
             min_len = 39936
-            min_len = len(wav_genTrue)
+            if config.FRAME_SHIFT==64:
+                min_len = len(wav_genTrue)
             sf.write(dst+'/{}_{}_realTrue.wav'.format(sample_idx,this_spk),wav_genTrue[:min_len],config.FRAME_RATE,)
 
     # 对于每个sample
