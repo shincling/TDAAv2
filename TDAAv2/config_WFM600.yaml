@@ -79,7 +79,7 @@ FRAME_RATE :  8000
 # FRAME_LENGTH :  int(0.032 * FRAME_RATE)
 FRAME_LENGTH : 256
 # 帧移(ms)
-FRAME_SHIFT :  64
+FRAME_SHIFT : 128 #128也是可以的
 # 是否shuffle_batch
 SHUFFLE_BATCH :  1
 # 设定speech multi acc的阈值alpha
