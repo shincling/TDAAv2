@@ -36,16 +36,16 @@ parser.add_argument('-config', default='config.yaml', type=str,
 #                     help="config file")
 # parser.add_argument('-restore', default='best_f1_WFM_v2.pt', type=str,
 #                     help="restore checkpoint")
-parser.add_argument('-gpus', default=[7], nargs='+', type=int,
+parser.add_argument('-gpus', default=[1], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
 # parser.add_argument('-restore', default='best_f1_v4.pt', type=str,
 #                     help="restore checkpoint")
 # parser.add_argument('-restore', default='best_f1_ct_v1.pt', type=str,
 #                     help="restore checkpoint")
-parser.add_argument('-restore', default='best_f1_globalemb7.pt', type=str,
-                    help="restore checkpoint")
-# parser.add_argument('-restore', default='best_schimit_v6.pt', type=str,
+# parser.add_argument('-restore', default='best_f1_globalemb10.pt', type=str,
 #                     help="restore checkpoint")
+parser.add_argument('-restore', default='best_schimit_v7.pt', type=str,
+                    help="restore checkpoint")
 # parser.add_argument('-restore', default=None, type=str,
 #                     help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
@@ -235,7 +235,7 @@ def train(epoch):
 
         # continue
 
-        if 0 or updates % config.eval_interval == 0:
+        if 1 or updates % config.eval_interval == 0:
             logging("time: %6.3f, epoch: %3d, updates: %8d, train loss: %6.5f\n"
                     % (time.time()-start_time, epoch, updates, total_loss / report_total))
             print('evaluating after %d updates...\r' % updates)
@@ -259,7 +259,9 @@ def train(epoch):
 def eval(epoch):
     model.eval()
     reference, candidate, source, alignments = [], [], [], []
-    eval_data_gen=prepare_data('once','valid',2,2)
+    test_or_valid='test'
+    print 'Test or valid:',test_or_valid
+    eval_data_gen=prepare_data('once',test_or_valid,2,2)
     # for raw_src, src, src_len, raw_tgt, tgt, tgt_len in validloader:
     SDR_SUM=np.array([])
     batch_idx=0
@@ -324,12 +326,12 @@ def eval(epoch):
         if batch_idx<=(500/config.batch_size): #only the former batches counts the SDR
             predicted_maps=predicted_masks*x_input_map_multi
             # predicted_maps=Variable(feas_tgt)
-            utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_output3wade')
+            utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_output3wadde')
             del predicted_maps,predicted_masks,x_input_map_multi
-            SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_output3wade/'))
+            SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_output3wadde/'))
             print 'SDR_aver_now:',SDR_SUM.mean()
             # raw_input('Press any key to continue......')
-        elif not best_SDR and SDR_SUM.mean()>best_SDR: #only record the best SDR once.
+        elif batch_idx==(500/config.batch_size)+1 and SDR_SUM.mean()>best_SDR: #only record the best SDR once.
             print 'Best SDR from {}---->{}'.format(best_SDR,SDR_SUM.mean())
             best_SDR=SDR_SUM.mean()
             # save_model(log_path+'checkpoint_bestSDR{}.pt'.format(best_SDR))

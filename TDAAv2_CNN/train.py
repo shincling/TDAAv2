@@ -27,7 +27,7 @@ parser = argparse.ArgumentParser(description='train.py')
 
 parser.add_argument('-config', default='config.yaml', type=str,
                     help="config file")
-parser.add_argument('-gpus', default=[4], nargs='+', type=int,
+parser.add_argument('-gpus', default=[1], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
 # parser.add_argument('-restore', default='best_f1_v4.pt', type=str,
 #                     help="restore checkpoint")
@@ -35,7 +35,7 @@ parser.add_argument('-gpus', default=[4], nargs='+', type=int,
 #                     help="restore checkpoint")
 # parser.add_argument('-restore', default='best_f1_globalemb6.pt', type=str,
 #                     help="restore checkpoint")
-parser.add_argument('-restore', default='best_cnn_v0.pt', type=str,
+parser.add_argument('-restore', default='best_cnn_v1.pt', type=str,
                     help="restore checkpoint")
 # parser.add_argument('-restore', default=None, type=str,
 #                     help="restore checkpoint")
@@ -226,7 +226,7 @@ def train(epoch):
 
         # continue
 
-        if 0 or (updates % config.eval_interval == 0) and epoch>8 :
+        if 1 or (updates % config.eval_interval == 0) and epoch>8 :
             logging("time: %6.3f, epoch: %3d, updates: %8d, train loss: %6.5f\n"
                     % (time.time()-start_time, epoch, updates, total_loss / report_total))
             print('evaluating after %d updates...\r' % updates)
@@ -321,7 +321,7 @@ def eval(epoch):
             SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_output1t2/'))
             print 'SDR_aver_now:',SDR_SUM.mean()
             # raw_input('Press any key to continue......')
-        elif not best_SDR and SDR_SUM.mean()>best_SDR: #only record the best SDR once.
+        elif batch_idx==(500/config.batch_size)+1 and SDR_SUM.mean()>best_SDR: #only record the best SDR once.
             print 'Best SDR from {}---->{}'.format(best_SDR,SDR_SUM.mean())
             best_SDR=SDR_SUM.mean()
             # save_model(log_path+'checkpoint_bestSDR{}.pt'.format(best_SDR))
