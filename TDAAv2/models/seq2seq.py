@@ -213,6 +213,8 @@ class seq2seq(nn.Module):
                 ss_embs=Variable(torch.stack(allEmbs,0).transpose(0,1)) # to [decLen, bs, dim]
                 mix=torch.cat((outputs[:-1,:],ss_embs[1:]),dim=2)
                 predicted_maps=self.ss_model(src,mix,tgt[1:-1])
+            if self.config.top1:
+                predicted_maps=predicted_maps[:,0].unsqueeze(1)
         else:
             ss_embs=Variable(torch.stack(allEmbs,0).transpose(0,1)) # to [decLen, bs, dim]
             if not self.config.top1:
