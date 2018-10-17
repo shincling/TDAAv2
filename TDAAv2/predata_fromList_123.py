@@ -116,7 +116,7 @@ def prepare_data(mode,train_or_test,min=None,max=None):
 
                 sample_idx[mix_k]=0#每个通道从0开始计数
 
-                if config.SHUFFLE_BATCH:
+                if train_or_test=='train' and config.SHUFFLE_BATCH:
                     random.shuffle(all_samples_list[mix_k])
                     print '\nshuffle success!',all_samples_list[mix_k][0]
 
