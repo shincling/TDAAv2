@@ -208,7 +208,8 @@ class Discriminator(nn.Module):
         self.cnn=nn.Conv2d(1, 64, (3, 3), stride=(2, 2), )
         self.cnn1=nn.Conv2d(64,64, (3, 3), stride=(2, 2), )
         self.cnn2=nn.Conv2d(64,64, (3, 3), stride=(2, 2), )
-        self.final=nn.Linear(36480,1)
+        # self.final=nn.Linear(36480,1)
+        self.final=nn.Linear(73920,1)
 
     def forward(self,spec):
         bs,topk,len,fre=spec.size()

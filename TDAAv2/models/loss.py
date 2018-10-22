@@ -74,7 +74,22 @@ def ss_loss(config,x_input_map_multi,multi_mask,y_multi_map,loss_multi_func):
     print 'loss 1 eval, losssum eval : ',loss_multi_speech.data.cpu().numpy(),loss_multi_sum_speech.data.cpu().numpy()
     # loss_multi_speech=loss_multi_speech+0.5*loss_multi_sum_speech
     print 'evaling multi-abs norm this eval batch:',torch.abs(y_multi_map-predict_multi_map).norm().data.cpu().numpy()
-    loss_multi_speech=loss_multi_speech+3*loss_multi_sum_speech
+    # loss_multi_speech=loss_multi_speech+3*loss_multi_sum_speech
     print 'loss for whole separation part:',loss_multi_speech.data.cpu().numpy()
     return loss_multi_speech
 
+def dis_loss(config,top_k_num,dis_model,x_input_map_multi,multi_mask,y_multi_map,loss_multi_func):
+    predict_multi_map=multi_mask*x_input_map_multi
+    y_multi_map= Variable(y_multi_map).cuda()
+    score_true=dis_model(y_multi_map)
+    score_false=dis_model(predict_multi_map)
+    acc_true=torch.sum(score_true>0.5).data.cpu().numpy()/float(score_true.size()[0])
+    acc_false=torch.sum(score_false<0.5).data.cpu().numpy()/float(score_true.size()[0])
+    acc_dis=(acc_false+acc_true)/2
+    print 'acc for dis:(ture,false,aver)',acc_true,acc_false,acc_dis
+
+    loss_dis_true=loss_multi_func(score_true,Variable(torch.ones(config.batch_size*top_k_num,1)).cuda())
+    loss_dis_false=loss_multi_func(score_false,Variable(torch.zeros(config.batch_size*top_k_num,1)).cuda())
+    loss_dis=loss_dis_true+loss_dis_false
+    print 'loss for dis:(ture,false)',loss_dis_true.data.cpu().numpy(),loss_dis_false.data.cpu().numpy()
+    return loss_dis

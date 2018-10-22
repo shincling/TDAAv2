@@ -36,15 +36,17 @@ parser.add_argument('-config', default='config.yaml', type=str,
 #                     help="config file")
 # parser.add_argument('-restore', default='best_f1_WFM_v2.pt', type=str,
 #                     help="restore checkpoint")
-parser.add_argument('-gpus', default=[1], nargs='+', type=int,
+parser.add_argument('-gpus', default=[2], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
 # parser.add_argument('-restore', default='best_f1_v4.pt', type=str,
 #                     help="restore checkpoint")
 # parser.add_argument('-restore', default='best_f1_ct_v1.pt', type=str,
 #                     help="restore checkpoint")
-# parser.add_argument('-restore', default='best_f1_globalemb10.pt', type=str,
+# parser.add_argument('-restore', default='best_f1_globalemb11.pt', type=str,
 #                     help="restore checkpoint")
-parser.add_argument('-restore', default='best_schimit_v7.pt', type=str,
+# parser.add_argument('-restore', default='best_schimit_v9.pt', type=str,
+#                     help="restore checkpoint")
+parser.add_argument('-restore', default='best_f1_sch23v0.pt', type=str,
                     help="restore checkpoint")
 # parser.add_argument('-restore', default=None, type=str,
 #                     help="restore checkpoint")
@@ -111,6 +113,9 @@ print('building model...\n')
 # 这个用法有意思，实际是 调了model.seq2seq 并且运行了最后这个括号里的五个参数的方法。(初始化了一个对象也就是）
 model = getattr(models, opt.model)(config, speech_fre, mix_speech_len, num_labels, use_cuda,
                        pretrain=pretrain_embed, score_fn=opt.score)
+if config.is_dis:
+    model_dis = models.separation_dis.Discriminator().cuda()
+    func_dis = torch.nn.MSELoss()
 
 if opt.restore:
     model.load_state_dict(checkpoints['model'])
@@ -220,6 +225,11 @@ def train(epoch):
         ss_loss = model.separation_loss(x_input_map_multi, multi_mask, feas_tgt)
 
         loss=sgm_loss+ss_loss
+        # dis_loss model
+        if config.is_dis:
+            dis_loss=models.loss.dis_loss(config,topk,model_dis,x_input_map_multi,multi_mask,feas_tgt,func_dis)
+            loss = loss+dis_loss
+
         loss.backward()
         # print 'totallllllllllll loss:',loss
         total_loss_sgm += sgm_loss.data[0]
@@ -235,7 +245,7 @@ def train(epoch):
 
         # continue
 
-        if 1 or updates % config.eval_interval == 0:
+        if 0 or updates % config.eval_interval == 0:
             logging("time: %6.3f, epoch: %3d, updates: %8d, train loss: %6.5f\n"
                     % (time.time()-start_time, epoch, updates, total_loss / report_total))
             print('evaluating after %d updates...\r' % updates)
@@ -326,9 +336,9 @@ def eval(epoch):
         if batch_idx<=(500/config.batch_size): #only the former batches counts the SDR
             predicted_maps=predicted_masks*x_input_map_multi
             # predicted_maps=Variable(feas_tgt)
-            utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_output3wadde')
+            utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_output08kobe')
             del predicted_maps,predicted_masks,x_input_map_multi
-            SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_output3wadde/'))
+            SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_output08kobe/'))
             print 'SDR_aver_now:',SDR_SUM.mean()
             # raw_input('Press any key to continue......')
         elif batch_idx==(500/config.batch_size)+1 and SDR_SUM.mean()>best_SDR: #only record the best SDR once.
