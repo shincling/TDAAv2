@@ -12,6 +12,7 @@ import data.utils as utils
 # Add the config.
 parser = argparse.ArgumentParser(description='predata scripts.')
 parser.add_argument('-config', default='config.yaml', type=str,
+# parser.add_argument('-config', default='config_mix.yaml', type=str,
                     help="config file")
 opt = parser.parse_args()
 config = utils.read_config(opt.config)

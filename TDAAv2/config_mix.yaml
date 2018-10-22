@@ -15,7 +15,7 @@ emb_size:  256 #decoder部分的说话人的初始化emb
 encoder_hidden_size:  256
 decoder_hidden_size:  512
 num_layers:  2
-dropout:  0.0
+dropout:  0.5
 max_tgt_len:  25
 eval_interval:  600
 save_interval:  3000
