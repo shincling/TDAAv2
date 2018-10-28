@@ -36,18 +36,22 @@ parser.add_argument('-config', default='config.yaml', type=str,
 #                     help="config file")
 # parser.add_argument('-restore', default='best_f1_WFM_v2.pt', type=str,
 #                     help="restore checkpoint")
-parser.add_argument('-gpus', default=[2], nargs='+', type=int,
+parser.add_argument('-gpus', default=[3], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
 # parser.add_argument('-restore', default='best_f1_v4.pt', type=str,
 #                     help="restore checkpoint")
+parser.add_argument('-restore', default='best_f1_hidden_v8.pt', type=str,
+                    help="restore checkpoint")
 # parser.add_argument('-restore', default='best_f1_ct_v1.pt', type=str,
 #                     help="restore checkpoint")
-# parser.add_argument('-restore', default='best_f1_globalemb11.pt', type=str,
+# parser.add_argument('-restore', default='best_f1_globalemb12.pt', type=str,
 #                     help="restore checkpoint")
-# parser.add_argument('-restore', default='best_schimit_v9.pt', type=str,
+# parser.add_argument('-restore', default='best_schimit_v10.pt', type=str,
 #                     help="restore checkpoint")
-parser.add_argument('-restore', default='best_f1_sch23v0.pt', type=str,
-                    help="restore checkpoint")
+# parser.add_argument('-restore', default='best_f1_sch23v2.pt', type=str,
+#                     help="restore checkpoint")
+# parser.add_argument('-restore', default='best_dis_v0.pt', type=str,
+#                     help="restore checkpoint")
 # parser.add_argument('-restore', default=None, type=str,
 #                     help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
@@ -58,7 +62,7 @@ parser.add_argument('-score', default='', type=str,
                     help="score_fn")
 parser.add_argument('-pretrain', default=False, type=bool,
                     help="load pretrain embedding")
-parser.add_argument('-notrain', default=False, type=bool,
+parser.add_argument('-notrain', default=1, type=bool,
                     help="train or not")
 parser.add_argument('-limit', default=0, type=int,
                     help="data limit")
@@ -119,18 +123,30 @@ if config.is_dis:
 
 if opt.restore:
     model.load_state_dict(checkpoints['model'])
+    if 0 and config.is_dis:
+        model_dis.load_state_dict(checkpoints['model_dis'])
 if use_cuda:
     model.cuda()
 if len(opt.gpus) > 1:
     model = nn.DataParallel(model, device_ids=opt.gpus, dim=1)
 
 # optimizer
-if opt.restore:
+if 0 and opt.restore:
     optim = checkpoints['optim']
 else:
     optim = Optim(config.optim, config.learning_rate, config.max_grad_norm,
                   lr_decay=config.learning_rate_decay, start_decay_at=config.start_decay_at)
+
 optim.set_parameters(model.parameters())
+if config.is_dis:
+    if 0 and opt.restore:
+        optim_dis = checkpoints['optim_dis']
+    else:
+        optim_dis = Optim(config.optim, config.learning_rate, config.max_grad_norm,
+                      lr_decay=config.learning_rate_decay, start_decay_at=config.start_decay_at)
+        optim_dis.set_parameters(model_dis.parameters())
+    scheduler_dis = L.CosineAnnealingLR(optim_dis.optimizer, T_max=config.epoch)
+
 if config.schedule:
     scheduler = L.CosineAnnealingLR(optim.optimizer, T_max=config.epoch)
 
@@ -152,12 +168,14 @@ logging_csv = utils.logging_csv(log_path+'record.csv')
 for k, v in config.items():
     logging("%s:\t%s\n" % (str(k), str(v)))
 logging("\n")
-logging(repr(model)+"\n\n")  
+logging(repr(model)+"\n\n")
+if config.is_dis:
+    logging(repr(model_dis)+"\n\n")
 
 logging('total number of parameters: %d\n\n' % param_count)
 logging('score function is %s\n\n' % opt.score)
 
-if opt.restore:
+if 0 and opt.restore:
     updates = checkpoints['updates']
 else:
     updates = 0
@@ -181,6 +199,8 @@ def train(epoch):
     if config.schedule:
         scheduler.step()
         print("Decaying learning rate to %g" % scheduler.get_lr()[0])
+        if config.is_dis:
+            scheduler_dis.step()
 
     if opt.model == 'gated': 
         model.current_epoch = epoch
@@ -229,6 +249,8 @@ def train(epoch):
         if config.is_dis:
             dis_loss=models.loss.dis_loss(config,topk,model_dis,x_input_map_multi,multi_mask,feas_tgt,func_dis)
             loss = loss+dis_loss
+            # print 'dis_para',model_dis.parameters().next()[0]
+            # print 'ss_para',model.parameters().next()[0]
 
         loss.backward()
         # print 'totallllllllllll loss:',loss
@@ -237,6 +259,8 @@ def train(epoch):
         total_loss += loss.data[0]
         report_total += num_total
         optim.step()
+        if config.is_dis:
+            optim_dis.step()
         updates += 1
         if updates%30==0:
             logging("time: %6.3f, epoch: %3d, updates: %8d, train loss this batch: %6.3f,sgm loss: %6.6f,ss loss: %6.6f\n"
@@ -262,22 +286,23 @@ def train(epoch):
             start_time = 0
             report_total = 0
 
-        if updates % config.save_interval == 0:  
-            save_model(log_path+'checkpoint_v2.pt')
+        if updates % config.save_interval == 1:
+            save_model(log_path+'checkpoint_v2_withdis{}.pt'.format(config.is_dis))
 
 
 def eval(epoch):
     model.eval()
     reference, candidate, source, alignments = [], [], [], []
-    test_or_valid='test'
+    e=epoch
+    test_or_valid='valid'
     print 'Test or valid:',test_or_valid
-    eval_data_gen=prepare_data('once',test_or_valid,2,2)
+    eval_data_gen=prepare_data('once',test_or_valid,config.MIN_MIX,config.MAX_MIX)
     # for raw_src, src, src_len, raw_tgt, tgt, tgt_len in validloader:
     SDR_SUM=np.array([])
     batch_idx=0
     global best_SDR
     while True:
-    # for ___ in range(100):
+    # for ___ in range(2):
         print '-'*30
         eval_data=eval_data_gen.next()
         if eval_data==False:
@@ -312,11 +337,12 @@ def eval(epoch):
         if len(opt.gpus) > 1:
             samples, alignment = model.module.sample(src, src_len)
         else:
-            try:
-                samples, alignment, hiddens, predicted_masks = model.beam_sample(src, src_len, dict_spk2idx, tgt, beam_size=config.beam_size)
-            except Exception,info:
-                print '**************Error occurs here************:', info
-                continue
+            samples, alignment, hiddens, predicted_masks = model.beam_sample(src, src_len, dict_spk2idx, tgt, beam_size=config.beam_size)
+            # try:
+            #     samples, alignment, hiddens, predicted_masks = model.beam_sample(src, src_len, dict_spk2idx, tgt, beam_size=config.beam_size)
+            # except Exception,info:
+            #     print '**************Error occurs here************:', info
+            #     continue
 
         if config.top1:
             predicted_masks=torch.cat([predicted_masks,1-predicted_masks],1)
@@ -333,12 +359,13 @@ def eval(epoch):
         print 'loss for ss,this batch:',ss_loss.data[0]
         del ss_loss,hiddens
 
-        if batch_idx<=(500/config.batch_size): #only the former batches counts the SDR
+        # '''''
+        if batch_idx<=(3000/config.batch_size): #only the former batches counts the SDR
             predicted_maps=predicted_masks*x_input_map_multi
             # predicted_maps=Variable(feas_tgt)
-            utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_output08kobe')
+            utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_output23jo')
             del predicted_maps,predicted_masks,x_input_map_multi
-            SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_output08kobe/'))
+            SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_output23jo/'))
             print 'SDR_aver_now:',SDR_SUM.mean()
             # raw_input('Press any key to continue......')
         elif batch_idx==(500/config.batch_size)+1 and SDR_SUM.mean()>best_SDR: #only record the best SDR once.
@@ -400,6 +427,10 @@ def save_model(path):
         'config': config,
         'optim': optim,
         'updates': updates}
+    if config.is_dis:
+        model_dis_state_dict = model_dis.module.state_dict() if len(opt.gpus) > 1 else model_dis.state_dict()
+        checkpoints['model_dis']=model_dis_state_dict
+        checkpoints['optim_dis']=optim_dis
     torch.save(checkpoints, path)
 
 
