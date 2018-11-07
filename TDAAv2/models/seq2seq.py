@@ -51,6 +51,7 @@ class seq2seq(nn.Module):
         # src = torch.index_select(src, dim=0, index=indices)
         # tgt = torch.index_select(tgt, dim=0, index=indices)
 
+        src=src.transpose(0,1)
         contexts, state = self.encoder(src, lengths.data.tolist()) # context是：（max_len,batch_size,hidden_size×2方向）这么大
         if not self.config.global_emb:
             outputs, final_state, embs = self.decoder(tgt[:-1], state, contexts.transpose(0, 1))
@@ -66,7 +67,7 @@ class seq2seq(nn.Module):
             # 这里的outputs就是没个step输出的隐层向量,大小是len+1,bs,emb（注意是第一个词到 EOS的总共）
             predicted_maps=self.ss_model(src,global_embs,tgt[1:-1])
 
-        return outputs, tgt[1:], predicted_maps
+        return outputs, tgt[1:], predicted_maps.transpose(0,1)
 
     def sample(self, src, src_len):
         # src=src.squeeze()
@@ -95,6 +96,7 @@ class seq2seq(nn.Module):
 
     def beam_sample(self, src, src_len, dict_spk2idx, tgt, beam_size = 1):
 
+        src=src.transpose(0,1)
         #beam_size = self.config.beam_size
         batch_size = src.size(0)
 
@@ -226,4 +228,4 @@ class seq2seq(nn.Module):
                 predicted_maps=self.ss_model(src,ss_embs[1:,:],tgt[1:-1])
             else:
                 predicted_maps=self.ss_model(src,ss_embs[1:2],tgt[1:2])
-        return allHyps, allAttn, allHiddens, predicted_maps
+        return allHyps, allAttn, allHiddens, predicted_maps #.transpose(0,1)

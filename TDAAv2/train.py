@@ -36,7 +36,7 @@ parser.add_argument('-config', default='config.yaml', type=str,
 #                     help="config file")
 # parser.add_argument('-restore', default='best_f1_WFM_v2.pt', type=str,
 #                     help="restore checkpoint")
-parser.add_argument('-gpus', default=[3], nargs='+', type=int,
+parser.add_argument('-gpus', default=[2,3], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
 # parser.add_argument('-restore', default='best_f1_v4.pt', type=str,
 #                     help="restore checkpoint")
@@ -62,7 +62,7 @@ parser.add_argument('-score', default='', type=str,
                     help="score_fn")
 parser.add_argument('-pretrain', default=False, type=bool,
                     help="load pretrain embedding")
-parser.add_argument('-notrain', default=1, type=bool,
+parser.add_argument('-notrain', default=0, type=bool,
                     help="train or not")
 parser.add_argument('-limit', default=0, type=int,
                     help="data limit")
@@ -224,7 +224,7 @@ def train(epoch):
         src_len = Variable(torch.LongTensor(config.batch_size).zero_()+mix_speech_len).unsqueeze(0)
         tgt_len = Variable(torch.LongTensor(config.batch_size).zero_()+len(train_data['multi_spk_fea_list'][0])).unsqueeze(0)
         if use_cuda:
-            src = src.cuda()
+            src = src.cuda().transpose(0,1)
             tgt = tgt.cuda()
             src_len = src_len.cuda()
             tgt_len = tgt_len.cuda()
@@ -234,15 +234,24 @@ def train(epoch):
         # optim.optimizer.zero_grad()
         outputs, targets, multi_mask = model(src, src_len, tgt, tgt_len) #这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
         print 'mask size:',multi_mask.size()
-        sgm_loss, num_total, num_correct = model.compute_loss(outputs, targets, opt.memory)
+
+        if 1 and len(opt.gpus) > 1:
+            sgm_loss, num_total, num_correct = model.module.compute_loss(outputs, targets, opt.memory)
+        else:
+            sgm_loss, num_total, num_correct = model.compute_loss(outputs, targets, opt.memory)
         print 'loss for SGM,this batch:',sgm_loss.data[0]/num_total
 
+        src=src.transpose(0,1)
         # expand the raw mixed-features to topk channel.
         siz=src.size()
         assert len(siz)==3
         topk=feas_tgt.size()[1]
         x_input_map_multi=torch.unsqueeze(src,1).expand(siz[0],topk,siz[1],siz[2])
-        ss_loss = model.separation_loss(x_input_map_multi, multi_mask, feas_tgt)
+        multi_mask=multi_mask.transpose(0,1)
+        if 1 and len(opt.gpus) > 1:
+            ss_loss = model.module.separation_loss(x_input_map_multi, multi_mask, feas_tgt)
+        else:
+            ss_loss = model.separation_loss(x_input_map_multi, multi_mask, feas_tgt)
 
         loss=sgm_loss+ss_loss
         # dis_loss model
@@ -327,15 +336,16 @@ def eval(epoch):
             WFM_mask=feas_tgt_square/feas_tgt_sum_square
 
         if use_cuda:
-            src = src.cuda()
+            src = src.cuda().transpose(0,1)
             tgt = tgt.cuda()
             src_len = src_len.cuda()
             tgt_len = tgt_len.cuda()
             feas_tgt = feas_tgt.cuda()
             if config.WFM:
                 WFM_mask= WFM_mask.cuda()
-        if len(opt.gpus) > 1:
-            samples, alignment = model.module.sample(src, src_len)
+        if 1 and len(opt.gpus) > 1:
+            # samples, alignment = model.module.sample(src, src_len)
+            samples, alignment, hiddens, predicted_masks = model.module.beam_sample(src, src_len, dict_spk2idx, tgt, beam_size=config.beam_size)
         else:
             samples, alignment, hiddens, predicted_masks = model.beam_sample(src, src_len, dict_spk2idx, tgt, beam_size=config.beam_size)
             # try:
@@ -349,13 +359,17 @@ def eval(epoch):
 
         # '''
         # expand the raw mixed-features to topk channel.
+        src = src.transpose(0,1)
         siz=src.size()
         assert len(siz)==3
         topk=feas_tgt.size()[1]
         x_input_map_multi=torch.unsqueeze(src,1).expand(siz[0],topk,siz[1],siz[2])
         if config.WFM:
             feas_tgt=x_input_map_multi.data*WFM_mask
-        ss_loss = model.separation_loss(x_input_map_multi, predicted_masks, feas_tgt)
+        if 1 and len(opt.gpus) > 1:
+            ss_loss = model.module.separation_loss(x_input_map_multi, predicted_masks, feas_tgt)
+        else:
+            ss_loss = model.separation_loss(x_input_map_multi, predicted_masks, feas_tgt)
         print 'loss for ss,this batch:',ss_loss.data[0]
         del ss_loss,hiddens
 
@@ -363,9 +377,9 @@ def eval(epoch):
         if batch_idx<=(3000/config.batch_size): #only the former batches counts the SDR
             predicted_maps=predicted_masks*x_input_map_multi
             # predicted_maps=Variable(feas_tgt)
-            utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_output23jo')
+            utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_outputwaddd')
             del predicted_maps,predicted_masks,x_input_map_multi
-            SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_output23jo/'))
+            SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_outputwaddd/'))
             print 'SDR_aver_now:',SDR_SUM.mean()
             # raw_input('Press any key to continue......')
         elif batch_idx==(500/config.batch_size)+1 and SDR_SUM.mean()>best_SDR: #only record the best SDR once.

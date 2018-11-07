@@ -191,14 +191,15 @@ class MIX_SPEECH(nn.Module):
 
     def forward(self,x):
         x,hidden=self.layer(x)
+        batch_size=x.size()[0]
         x=x.contiguous()
         xx=x
-        x=x.view(self.config.batch_size*self.mix_speech_len,-1)
+        x=x.view(batch_size*self.mix_speech_len,-1)
         # out=F.tanh(self.Linear(x))
         out=self.Linear(x)
         out=F.tanh(out)
         # out=F.relu(out)
-        out=out.view(self.config.batch_size,self.mix_speech_len,self.input_fre,-1)
+        out=out.view(batch_size,self.mix_speech_len,self.input_fre,-1)
         # print 'Mix speech output shape:',out.size()
         return out,xx
 
@@ -281,17 +282,17 @@ class SS(nn.Module):
 
     def forward(self, mix_feas, hidden_outputs, targets):
         config=self.config
-        top_k_num=targets.size()[0]
+        top_k_num,batch_size=targets.size()
         mix_speech_hidden,mix_tmp_hidden=self.mix_hidden_layer_3d(mix_feas)
         mix_speech_multiEmbs=torch.transpose(hidden_outputs,0,1).contiguous()# bs*num_labels（最多混合人个数）×Embedding的大小
         if self.config.is_SelfTune:
             mix_adjust=self.adjust_layer(mix_tmp_hidden,mix_speech_multiEmbs)
             mix_speech_multiEmbs=mix_adjust+mix_speech_multiEmbs
-        mix_speech_hidden_5d=mix_speech_hidden.view(config.batch_size,1,self.mix_speech_len,self.speech_fre,config.EMBEDDING_SIZE)
-        mix_speech_hidden_5d=mix_speech_hidden_5d.expand(config.batch_size,top_k_num,self.mix_speech_len,self.speech_fre,config.EMBEDDING_SIZE).contiguous()
+        mix_speech_hidden_5d=mix_speech_hidden.view(batch_size,1,self.mix_speech_len,self.speech_fre,config.EMBEDDING_SIZE)
+        mix_speech_hidden_5d=mix_speech_hidden_5d.expand(batch_size,top_k_num,self.mix_speech_len,self.speech_fre,config.EMBEDDING_SIZE).contiguous()
         mix_speech_hidden_5d_last=mix_speech_hidden_5d.view(-1,self.mix_speech_len,self.speech_fre,config.EMBEDDING_SIZE)
         att_multi_speech=self.att_speech_layer(mix_speech_hidden_5d_last,mix_speech_multiEmbs.view(-1,config.SPK_EMB_SIZE))
-        att_multi_speech=att_multi_speech.view(config.batch_size,top_k_num,self.mix_speech_len,self.speech_fre) # bs,num_labels,len,fre这个东西
+        att_multi_speech=att_multi_speech.view(batch_size,top_k_num,self.mix_speech_len,self.speech_fre) # bs,num_labels,len,fre这个东西
         multi_mask=att_multi_speech
         return multi_mask
 

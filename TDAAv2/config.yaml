@@ -1,7 +1,7 @@
 data:  './data/data/save_data'
 log:  './data/data/log/'
 epoch:  200
-batch_size: 1
+batch_size: 32
 param_init:  0.1
 optim:  'adam'
 learning_rate:  0.0001
@@ -22,7 +22,7 @@ save_interval:  3000
 max_generator_batches:  32
 metric:  ['hamming_loss', 'micro_f1']
 shared_vocab:  0
-WFM: 1
+WFM: 0
 beam_size:  5
 top1: 0 #控制是否用top-1的方法来生产第二个通道
 ct_recu: 0 #控制是否采用att递减的ct构成
