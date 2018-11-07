@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 # import data.dict as dict
 import models
+from figure_hot import relitu_line
 
 import numpy as np
 
@@ -195,6 +196,9 @@ class seq2seq(nn.Module):
             hyps, attn, hiddens, embs = [], [], [], []
             for i, (times, k) in enumerate(ks[:n_best]):
                 hyp, att, hidden, emb = b.getHyp(times, k)
+                if self.config.relitu:
+                    relitu_line(626,1,att[0].cpu().numpy())
+                    relitu_line(626,1,att[1].cpu().numpy())
                 hyps.append(hyp)
                 attn.append(att.max(1)[1])
                 hiddens.append(hidden)
