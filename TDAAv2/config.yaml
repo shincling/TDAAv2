@@ -23,14 +23,15 @@ max_generator_batches:  32
 metric:  ['hamming_loss', 'micro_f1']
 shared_vocab:  0
 WFM: 0
+MLMSE: 0
 beam_size:  5
 top1: 0 #控制是否用top-1的方法来生产第二个通道
 ct_recu: 0 #控制是否采用att递减的ct构成
-#global_emb:  1
-#SPK_EMB_SIZE : 256 #注意这个东西需要和上面的spk_emb（如果是global_emb的话）,否认则就跟decoder的hidden_size对应
-global_emb:  0
-SPK_EMB_SIZE : 512 #注意这个东西需要和上面的spk_emb（如果是global_emb的话）,否认则就跟decoder的hidden_size对应
-hidden_mix: 0 #这个模式是不采用global emb的时候，把hidden和下一步的embeding一起cat起来作为ss的输入进去。
+global_emb:  1
+SPK_EMB_SIZE : 256 #注意这个东西需要和上面的spk_emb（如果是global_emb的话）,否认则就跟decoder的hidden_size对应
+#global_emb:  0
+#SPK_EMB_SIZE : 512 #注意这个东西需要和上面的spk_emb（如果是global_emb的话）,否认则就跟decoder的hidden_size对应
+#hidden_mix: 0 #这个模式是不采用global emb的时候，把hidden和下一步的embeding一起cat起来作为ss的输入进去。
 #hidden_mix: 1 #这个模式是不采用global emb的时候，把hidden和下一步的embeding一起cat起来作为ss的输入进去。
 #SPK_EMB_SIZE : 768 #512+256 注意这个东西需要和上面的spk_emb（如果是global_emb的话）,否认则就跟decoder的hidden_size对应
 schmidt: 0
