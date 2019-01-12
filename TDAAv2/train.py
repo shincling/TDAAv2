@@ -19,8 +19,8 @@ import argparse
 import time
 import json
 import collections
-import codecs
-
+import lera
+import code
 
 #config
 parser = argparse.ArgumentParser(description='train.py')
@@ -36,24 +36,26 @@ parser.add_argument('-config', default='config.yaml', type=str,
 #                     help="config file")
 # parser.add_argument('-restore', default='best_f1_WFM_v2.pt', type=str,
 #                     help="restore checkpoint")
-parser.add_argument('-gpus', default=[2,3], nargs='+', type=int,
+parser.add_argument('-gpus', default=[2,3,4], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
+# parser.add_argument('-restore', default='best_mlmse_v0.pt', type=str,
+#                      help="restore checkpoint")
 # parser.add_argument('-restore', default='best_f1_v4.pt', type=str,
 #                     help="restore checkpoint")
-parser.add_argument('-restore', default='best_f1_hidden_v8.pt', type=str,
-                    help="restore checkpoint")
+# parser.add_argument('-restore', default='best_f1_hidden_v8.pt', type=str,
+#                     help="restore checkpoint")
 # parser.add_argument('-restore', default='best_f1_ct_v1.pt', type=str,
 #                     help="restore checkpoint")
-# parser.add_argument('-restore', default='best_f1_globalemb12.pt', type=str,
-#                     help="restore checkpoint")
+parser.add_argument('-restore', default='best_f1_globalemb12.pt', type=str,
+                    help="restore checkpoint")
 # parser.add_argument('-restore', default='best_schimit_v10.pt', type=str,
 #                     help="restore checkpoint")
 # parser.add_argument('-restore', default='best_f1_sch23v2.pt', type=str,
 #                     help="restore checkpoint")
 # parser.add_argument('-restore', default='best_dis_v0.pt', type=str,
 #                     help="restore checkpoint")
-# parser.add_argument('-restore', default=None, type=str,
-#                     help="restore checkpoint")
+#parser.add_argument('-restore', default=None, type=str,
+#                    help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
                     help="Random seed")
 parser.add_argument('-model', default='seq2seq', type=str,
@@ -62,7 +64,7 @@ parser.add_argument('-score', default='', type=str,
                     help="score_fn")
 parser.add_argument('-pretrain', default=False, type=bool,
                     help="load pretrain embedding")
-parser.add_argument('-notrain', default=0, type=bool,
+parser.add_argument('-notrain', default=1, type=bool,
                     help="train or not")
 parser.add_argument('-limit', default=0, type=int,
                     help="data limit")
@@ -175,10 +177,16 @@ if config.is_dis:
 logging('total number of parameters: %d\n\n' % param_count)
 logging('score function is %s\n\n' % opt.score)
 
-if 0 and opt.restore:
+if 1 and opt.restore:
     updates = checkpoints['updates']
 else:
     updates = 0
+
+if config.MLMSE:
+    if opt.restore and 'Var' in checkpoints:
+        Var = checkpoints['Var']
+    else:
+        Var = None
 
 total_loss, start_time = 0, time.time()
 total_loss_sgm,total_loss_ss= 0 , 0
@@ -192,6 +200,24 @@ with open(opt.label_dict_file, 'r') as f:
     label_dict = json.load(f)
 
 # train
+lera.log_hyperparams({
+  'title': unicode('MLMSE train with hidden Relu+Order') ,
+  'updates':updates,
+  'batch_size': config.batch_size,
+  'WFM':config.WFM,
+  'MLMSE':config.MLMSE,
+  'top1':config.top1 ,#控制是否用top-1的方法来生产第二个通道
+  'global_emb':config.global_emb,
+  # 'spk_emb_size':config.SPK_EMB_SIZE, #注意这个东西需要和上面的spk_emb（如果是global_emb的话）,否认则就跟decoder的hidden_size对应
+  # 'hidden_mix':config.hidden_mix,#这个模式是不采用global emb的时候，把hidden和下一步的embeding一起cat起来作为ss的输入进去。
+  'schmidt': config.schmidt,
+  'log path': unicode(log_path),
+  'selfTune':config.is_SelfTune,
+  'is_dis':config.is_dis,
+  'cnn':config.speech_cnn_net,#是否采用CNN的结构来抽取
+  'relitu':config.relitu,
+  'ct_recu':config.ct_recu,#控制是否采用att递减的ct构成
+})
 def train(epoch):
     e = epoch
     model.train()
@@ -201,11 +227,16 @@ def train(epoch):
         print("Decaying learning rate to %g" % scheduler.get_lr()[0])
         if config.is_dis:
             scheduler_dis.step()
+        lera.log({
+            'lr': scheduler.get_lr()[0],
+        })
 
     if opt.model == 'gated': 
         model.current_epoch = epoch
 
     global e, updates, total_loss, start_time, report_total, total_loss_sgm, total_loss_ss
+    if config.MLMSE:
+        global Var
 
     train_data_gen=prepare_data('once','train')
     # for raw_src, src, src_len, raw_tgt, tgt, tgt_len in trainloader:
@@ -248,8 +279,14 @@ def train(epoch):
         topk=feas_tgt.size()[1]
         x_input_map_multi=torch.unsqueeze(src,1).expand(siz[0],topk,siz[1],siz[2])
         multi_mask=multi_mask.transpose(0,1)
+
         if 1 and len(opt.gpus) > 1:
-            ss_loss = model.module.separation_loss(x_input_map_multi, multi_mask, feas_tgt)
+            if config.MLMSE:
+                Var = model.module.update_var(x_input_map_multi, multi_mask, feas_tgt)
+                lera.log_image(u'Var weight',Var.data.cpu().numpy().reshape(config.speech_fre,config.speech_fre,1).repeat(3,2),clip=(-1,1))
+                ss_loss = model.module.separation_loss(x_input_map_multi, multi_mask, feas_tgt, Var)
+            else:
+                ss_loss = model.module.separation_loss(x_input_map_multi, multi_mask, feas_tgt)
         else:
             ss_loss = model.separation_loss(x_input_map_multi, multi_mask, feas_tgt)
 
@@ -265,11 +302,16 @@ def train(epoch):
         # print 'totallllllllllll loss:',loss
         total_loss_sgm += sgm_loss.data[0]
         total_loss_ss += ss_loss.data[0]
+        lera.log({
+            'sgm_loss': sgm_loss.data[0],
+            'ss_loss': ss_loss.data[0],
+        })
         total_loss += loss.data[0]
         report_total += num_total
         optim.step()
         if config.is_dis:
             optim_dis.step()
+
         updates += 1
         if updates%30==0:
             logging("time: %6.3f, epoch: %3d, updates: %8d, train loss this batch: %6.3f,sgm loss: %6.6f,ss loss: %6.6f\n"
@@ -278,7 +320,7 @@ def train(epoch):
 
         # continue
 
-        if 0 or updates % config.eval_interval == 0:
+        if 0 or updates % config.eval_interval == 0 and epoch>1 :
             logging("time: %6.3f, epoch: %3d, updates: %8d, train loss: %6.5f\n"
                     % (time.time()-start_time, epoch, updates, total_loss / report_total))
             print('evaluating after %d updates...\r' % updates)
@@ -309,7 +351,7 @@ def eval(epoch):
     # for raw_src, src, src_len, raw_tgt, tgt, tgt_len in validloader:
     SDR_SUM=np.array([])
     batch_idx=0
-    global best_SDR
+    global best_SDR,Var
     while True:
     # for ___ in range(2):
         print '-'*30
@@ -343,16 +385,16 @@ def eval(epoch):
             feas_tgt = feas_tgt.cuda()
             if config.WFM:
                 WFM_mask= WFM_mask.cuda()
-        if 1 and len(opt.gpus) > 1:
-            # samples, alignment = model.module.sample(src, src_len)
-            samples, alignment, hiddens, predicted_masks = model.module.beam_sample(src, src_len, dict_spk2idx, tgt, beam_size=config.beam_size)
-        else:
-            samples, alignment, hiddens, predicted_masks = model.beam_sample(src, src_len, dict_spk2idx, tgt, beam_size=config.beam_size)
-            # try:
-            #     samples, alignment, hiddens, predicted_masks = model.beam_sample(src, src_len, dict_spk2idx, tgt, beam_size=config.beam_size)
-            # except Exception,info:
-            #     print '**************Error occurs here************:', info
-            #     continue
+        try:
+            if 1 and len(opt.gpus) > 1:
+                # samples, alignment = model.module.sample(src, src_len)
+                samples, alignment, hiddens, predicted_masks = model.module.beam_sample(src, src_len, dict_spk2idx, tgt, beam_size=config.beam_size)
+            else:
+                samples, alignment, hiddens, predicted_masks = model.beam_sample(src, src_len, dict_spk2idx, tgt, beam_size=config.beam_size)
+                # samples, alignment, hiddens, predicted_masks = model.beam_sample(src, src_len, dict_spk2idx, tgt, beam_size=config.beam_size)
+        except Exception,info:
+            print '**************Error occurs here************:', info
+            continue
 
         if config.top1:
             predicted_masks=torch.cat([predicted_masks,1-predicted_masks],1)
@@ -367,20 +409,25 @@ def eval(epoch):
         if config.WFM:
             feas_tgt=x_input_map_multi.data*WFM_mask
         if 1 and len(opt.gpus) > 1:
-            ss_loss = model.module.separation_loss(x_input_map_multi, predicted_masks, feas_tgt)
+            ss_loss = model.module.separation_loss(x_input_map_multi, predicted_masks, feas_tgt,Var)
         else:
             ss_loss = model.separation_loss(x_input_map_multi, predicted_masks, feas_tgt)
         print 'loss for ss,this batch:',ss_loss.data[0]
+        lera.log({
+            'ss_loss_'+test_or_valid: ss_loss.data[0],
+        })
+
         del ss_loss,hiddens
 
         # '''''
-        if batch_idx<=(3000/config.batch_size): #only the former batches counts the SDR
+        if batch_idx<=(500/config.batch_size): #only the former batches counts the SDR
             predicted_maps=predicted_masks*x_input_map_multi
             # predicted_maps=Variable(feas_tgt)
             utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_outputwaddd')
             del predicted_maps,predicted_masks,x_input_map_multi
             SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_outputwaddd/'))
             print 'SDR_aver_now:',SDR_SUM.mean()
+            lera.log({'SDR sample':SDR_SUM.mean()})
             # raw_input('Press any key to continue......')
         elif batch_idx==(500/config.batch_size)+1 and SDR_SUM.mean()>best_SDR: #only record the best SDR once.
             print 'Best SDR from {}---->{}'.format(best_SDR,SDR_SUM.mean())
@@ -441,6 +488,9 @@ def save_model(path):
         'config': config,
         'optim': optim,
         'updates': updates}
+
+    if config.MLMSE:
+        checkpoints['Var']=Var
     if config.is_dis:
         model_dis_state_dict = model_dis.module.state_dict() if len(opt.gpus) > 1 else model_dis.state_dict()
         checkpoints['model_dis']=model_dis_state_dict
