@@ -4,6 +4,7 @@ import torch.nn as nn
 import numpy as np
 import data.dict as dict
 from torch.autograd import Variable
+import torch.nn.functional as F
 
 def rank_feas(raw_tgt,feas_list):
     final_num=[]
@@ -76,6 +77,38 @@ def ss_loss(config,x_input_map_multi,multi_mask,y_multi_map,loss_multi_func):
     print 'evaling multi-abs norm this eval batch:',torch.abs(y_multi_map-predict_multi_map).norm().data.cpu().numpy()
     # loss_multi_speech=loss_multi_speech+3*loss_multi_sum_speech
     print 'loss for whole separation part:',loss_multi_speech.data.cpu().numpy()
+    return loss_multi_speech
+
+def ss_loss_MLMSE(config,x_input_map_multi,multi_mask,y_multi_map,loss_multi_func,Var):
+    try:
+        if Var == None:
+            Var=Variable(torch.eye(config.speech_fre,config.speech_fre).cuda(),requires_grad=0) #初始化的是单位矩阵
+            print 'Set Var to:',Var
+    except:
+        pass
+    assert Var.size()==(config.speech_fre,config.speech_fre)
+
+    predict_multi_map=torch.mean(multi_mask*x_input_map_multi,-2) #在时间维度上平均
+    # predict_multi_map=Variable(y_multi_map)
+    y_multi_map= torch.mean(Variable(y_multi_map),-2) #在时间维度上平均
+
+    loss_vector=(y_multi_map-predict_multi_map).view(-1,config.speech_fre).unsqueeze(1) #应该是bs*1*fre
+
+    Var_inverse=torch.inverse(Var)
+    Var_inverse=Var_inverse.unsqueeze(0).expand(loss_vector.size()[0], config.speech_fre, config.speech_fre) #扩展成batch的形式
+    loss_multi_speech=torch.bmm(torch.bmm(loss_vector,Var_inverse),loss_vector.transpose(1,2))
+    loss_multi_speech=torch.mean(loss_multi_speech,0)
+
+    #各通道和为１的loss部分,应该可以更多的带来差异
+    y_sum_map=Variable(torch.ones(config.batch_size,config.mix_speech_len,config.speech_fre)).cuda()
+    predict_sum_map=torch.sum(multi_mask,1)
+    loss_multi_sum_speech=loss_multi_func(predict_sum_map,y_sum_map)
+    print 'loss 1 eval, losssum eval : ',loss_multi_speech.data.cpu().numpy(),loss_multi_sum_speech.data.cpu().numpy()
+    # loss_multi_speech=loss_multi_speech+0.5*loss_multi_sum_speech
+    print 'evaling multi-abs norm this eval batch:',torch.abs(y_multi_map-predict_multi_map).norm().data.cpu().numpy()
+    # loss_multi_speech=loss_multi_speech+3*loss_multi_sum_speech
+    print 'loss for whole separation part:',loss_multi_speech.data.cpu().numpy()
+    # return F.relu(loss_multi_speech)
     return loss_multi_speech
 
 def dis_loss(config,top_k_num,dis_model,x_input_map_multi,multi_mask,y_multi_map,loss_multi_func):

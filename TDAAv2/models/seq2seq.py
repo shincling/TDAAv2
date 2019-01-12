@@ -41,8 +41,19 @@ class seq2seq(nn.Module):
         else:
             return models.cross_entropy_loss(hidden_outputs, self.decoder, targets, self.criterion, self.config)
 
-    def separation_loss(self, x_input_map_multi,masks,y_multi_map):
-        return models.ss_loss(self.config, x_input_map_multi,masks,y_multi_map,self.loss_for_ss)
+    def separation_loss(self, x_input_map_multi,masks,y_multi_map,Var):
+        if not self.config.MLMSE:
+            return models.ss_loss(self.config, x_input_map_multi,masks,y_multi_map,self.loss_for_ss)
+        else:
+            return models.ss_loss_MLMSE(self.config, x_input_map_multi,masks,y_multi_map,self.loss_for_ss,Var)
+
+    def update_var(self, x_input_map_multi,multi_masks,y_multi_map):
+        predict_multi_map=torch.mean(multi_masks*x_input_map_multi,-2) #在时间维度上平均
+        y_multi_map= torch.mean(Variable(y_multi_map),-2) #在时间维度上平均
+        loss_vector=(y_multi_map-predict_multi_map).view(-1,self.config.speech_fre).unsqueeze(-1) #应该是bs*1*fre
+        Var=torch.bmm(loss_vector,loss_vector.transpose(1,2))
+        Var=torch.mean(Var,0) #在batch的维度上平均
+        return Var.detach()
 
     def forward(self, src, src_len, tgt, tgt_len):
         # 感觉这是个把一个batch里的数据按从长到短调整顺序的意思
