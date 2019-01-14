@@ -40,7 +40,7 @@ is_dis: 0
 speech_cnn_net: 0 #是否采用CNN的结构来抽取
 relitu: 0
 
-nomalize: 1
+normalize: 1
 
 # 设定最小混叠说话人数，Minimum number of mixed speakers for training
 MIN_MIX :  1
@@ -95,7 +95,7 @@ dB: 5
 # 设置训练/开发/验证模型的最大语音长度(秒)
 MIN_LEN :  48000
 #MAX_LEN :  FRAME_RATE*MAX_LEN
-MAX_LEN :  1600000
+MAX_LEN :  160000
 # 帧长
 WINDOWS :  FRAME_LENGTH
 # 未登录说话人语音的最大额外条数

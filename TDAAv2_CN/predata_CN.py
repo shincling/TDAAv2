@@ -16,8 +16,8 @@ class AttrDict(dict):
 
 
 def read_config(path):
-
     return AttrDict(yaml.load(open(path, 'r')))
+
 # Add the config.
 parser = argparse.ArgumentParser(description='predata scripts.')
 parser.add_argument('-config', default='config_CN.yaml', type=str,
@@ -69,7 +69,7 @@ def split_forTrainDevTest(given_list,train_or_test,phase):
 
     return output_list
 
-def process_signal(signal,rate,aim_len,num_ordier):
+def process_signal(signal,rate,aim_len,num_ordier=None):
     "输入语音wav信号，用来预处理合适的长度和采样率，已经确保是大于config.MIN_LEN了"
     if len(signal.shape) > 1:
         signal = signal[:, 0]
@@ -85,7 +85,7 @@ def process_signal(signal,rate,aim_len,num_ordier):
         signal=np.append(signal,np.zeros(aim_len - signal.shape[0]))
 
     if num_ordier != 0 and signal.shape[0] < aim_len:  # 之后的信号引入一个偏移，然后用根据最大长度用 0 补齐,
-        shift_frames=random.sample(range(aim_len - signal.shape[0]+1)) # 0~长度差
+        shift_frames=random.sample(range(aim_len - signal.shape[0]+1),1)[0] # 0~长度差
         signal=np.append(np.append(np.zeros(shift_frames),signal),np.zeros(aim_len - signal.shape[0] - shift_frames))
 
     if config.normalize: #如果需要归一化的话
@@ -166,102 +166,52 @@ def prepare_data(mode,train_or_test,min=None,max=None,add_noise=True):
                         else:
                             break
 
-
-                    if signal.shape[0] > config.MAX_LEN:  # 根据最大长度裁剪
-                        signal = signal[:config.MAX_LEN]
-                    if len(signal.shape) > 1:
-                        signal = signal[:, 0]
-                    if rate != config.FRAME_RATE:
-                        # 如果频率不是设定的频率则需要进行转换
-                        signal = resampy.resample(signal, rate, config.FRAME_RATE, filter='kaiser_best')
-
                     signal = process_signal(signal,rate, config.MAX_LEN, num_ordier=k)
 
-                    # 更新混叠语音长度
-                    # if signal.shape[0] > mix_len:
-                    #     mix_len = signal.shape[0]
-
-                    signal -= np.mean(signal)  # 语音信号预处理，先减去均值
-                    signal /= np.max(np.abs(signal))  # 波形幅值预处理，幅值归一化
-
-                    # 如果需要augment数据的话，先进行随机shift, 以后考虑固定shift
-                    if config.AUGMENT_DATA and train_or_test=='train':
-                        random_shift = random.sample(range(len(signal)), 1)[0]
-                        signal = np.append(signal[random_shift:], signal[:random_shift])
-
-                    if signal.shape[0] < config.MAX_LEN:  # 根据最大长度用 0 补齐,
-                        signal=np.append(signal,np.zeros(config.MAX_LEN - signal.shape[0]))
-
                     if k==0:#第一个作为目标
-                        ratio=10**(aim_spk_db_k[k]/20.0)
-                        signal=ratio*signal
+                        # ratio=10**(aim_spk_db_k[k]/20.0)
+                        # signal=ratio*signal
                         aim_spkname.append(aim_spk_k[0])
-                        # aim_spk=eval(re.findall('\d+',aim_spk_k[0])[0])-1 #选定第一个作为目标说话人
-                        #TODO:这里有个问题是spk是从１开始的貌似，这个后面要统一一下　-->　已经解决，构建了spk和idx的双向索引
-                        aim_spk_speech=signal
                         aim_spkid.append(aim_spkname)
                         wav_mix=signal
-                        aim_fea_clean = np.transpose(np.abs(librosa.core.spectrum.stft(signal, config.FRAME_LENGTH,
-                                                                                    config.FRAME_SHIFT)))
+                        if not config.IS_LOG_SPECTRAL: #暂时都不用log
+                            aim_fea_clean = np.transpose(np.abs(librosa.core.spectrum.stft(signal, config.FRAME_LENGTH, config.FRAME_SHIFT)))
                         aim_fea.append(aim_fea_clean)
                         # 把第一个人顺便也注册进去混合dict里
                         multi_fea_dict_this_sample[spk]=aim_fea_clean
                         multi_wav_dict_this_sample[spk]=signal
 
                     else:
-                        ratio=10**(aim_spk_db_k[k]/20.0)
-                        signal=ratio*signal
+                        # ratio=10**(aim_spk_db_k[k]/20.0)
+                        # signal=ratio*signal
                         wav_mix = wav_mix + signal  # 混叠后的语音
-                        #　这个说话人的语音
-                        some_fea_clean = np.transpose(np.abs(librosa.core.spectrum.stft(signal, config.FRAME_LENGTH,
-                                                                                       config.FRAME_SHIFT,)))
+                        if not config.IS_LOG_SPECTRAL:
+                            some_fea_clean = np.transpose(np.abs(librosa.core.spectrum.stft(signal, config.FRAME_LENGTH, config.FRAME_SHIFT,)))
                         multi_fea_dict_this_sample[spk]=some_fea_clean
                         multi_wav_dict_this_sample[spk]=signal
 
                 multi_spk_fea_list.append(multi_fea_dict_this_sample) #把这个sample的dict传进去
                 multi_spk_wav_list.append(multi_wav_dict_this_sample) #把这个sample的dict传进去
 
+                assert wav_mix.shape[0]==config.MAX_LEN
+                wav_mix=process_signal(wav_mix,rate,config.MAX_LEN)
                 # 这里采用log 以后可以考虑采用MFCC或GFCC特征做为输入
-                #wav_mix, rate = sf.read('/data3/shijing/Qian_Qin_180_0.wav')  # wav_mix 是采样值，rate 是采样频率
-                # wav_mix, rate = sf.read('/data3/shijing/01t.wav')  # wav_mix 是采样值，rate 是采样频率
-                # wav_mix, rate = sf.read('/data3/shijing/聊天-单通道语音.wav')  # wav_mix 是采样值，rate 是采样频率
-                wav_mix, rate = sf.read('/data3/shijing/朗读-单通道语音.wav')  # wav_mix 是采样值，rate 是采样频率
-                if len(wav_mix.shape) > 1:
-                    wav_mix = wav_mix[:, 0]
-                if rate != config.FRAME_RATE:
-                    # 如果频率不是设定的频率则需要进行转换
-                    wav_mix = resampy.resample(wav_mix, rate, config.FRAME_RATE, filter='kaiser_best')
-                if wav_mix.shape[0] > config.MAX_LEN:  # 根据最大长度裁剪
-                    wav_mix = wav_mix[:config.MAX_LEN]
-                # 更新混叠语音长度
-                if wav_mix.shape[0] > mix_len:
-                    mix_len = wav_mix.shape[0]
-
-                wav_mix -= np.mean(wav_mix)  # 语音信号预处理，先减去均值
-                wav_mix /= np.max(np.abs(wav_mix))  # 波形幅值预处理，幅值归一化
-                
                 if config.IS_LOG_SPECTRAL:
-                    feature_mix = np.log(np.transpose(np.abs(librosa.core.spectrum.stft(wav_mix, config.FRAME_LENGTH,
-                                                                                        config.FRAME_SHIFT,
-                                                                                        window=config.WINDOWS)))
-                                         + np.spacing(1))
+                    feature_mix = np.log(np.transpose(np.abs(librosa.core.spectrum.stft(wav_mix, config.FRAME_LENGTH, config.FRAME_SHIFT,))) + np.spacing(1))
                 else:
-                    feature_mix = np.transpose(np.abs(librosa.core.spectrum.stft(wav_mix, config.FRAME_LENGTH,
-                                                                                     config.FRAME_SHIFT,)))
+                    feature_mix = np.transpose(np.abs(librosa.core.spectrum.stft(wav_mix, config.FRAME_LENGTH, config.FRAME_SHIFT,)))
 
                 mix_speechs[batch_idx,:]=wav_mix
                 mix_feas.append(feature_mix)
-                mix_phase.append(np.transpose(librosa.core.spectrum.stft(wav_mix, config.FRAME_LENGTH,
-                                                                                     config.FRAME_SHIFT,)))
+                mix_phase.append(np.transpose(librosa.core.spectrum.stft(wav_mix, config.FRAME_LENGTH, config.FRAME_SHIFT,)))
                 batch_idx+=1
-                # print 'batch_dix:{}/{},'.format(batch_idx,config.batch_size),
+                print 'batch_dix:{}/{},'.format(batch_idx,config.batch_size),
+
                 if batch_idx==config.batch_size: #填满了一个batch
                     #下一个batch的混合说话人个数， 先调整一下
-                    mix_k=random.sample(mix_number_list,1)[0]
                     mix_feas=np.array(mix_feas)
                     mix_phase=np.array(mix_phase)
                     aim_fea=np.array(aim_fea)
-                    # aim_spkid=np.array(aim_spkid)
                     query=np.array(query)
                     print 'spk_list_from_this_gen:{}'.format(aim_spkname)
                     print 'aim spk list:', [one.keys() for one in multi_spk_fea_list]
@@ -269,7 +219,6 @@ def prepare_data(mode,train_or_test,min=None,max=None,add_noise=True):
                     # print mix_speechs.shape,mix_feas.shape,aim_fea.shape,len(aim_spkname),query.shape,len(all_spk)
                     if mode=='global':
                         all_spk=sorted(all_spk)
-                        all_spk=sorted(all_spk_train)
                         all_spk.insert(0,'<BOS>') #添加两个结构符号，来标识开始或结束。
                         all_spk.append('<EOS>')
                         all_spk_eval=sorted(all_spk_eval)
@@ -302,7 +251,6 @@ def prepare_data(mode,train_or_test,min=None,max=None,add_noise=True):
                     query=[]#应该是batch_size，shape(query)的形式，用list再转换把
                     multi_spk_fea_list=[]
                     multi_spk_wav_list=[]
-                sample_idx[mix_k]+=1
 
         else:
             raise ValueError('No such dataset:{} for Speech.'.format(config.DATASET))
