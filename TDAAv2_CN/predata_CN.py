@@ -30,15 +30,7 @@ np.random.seed(1)#设定种子
 random.seed(1)
 
 aim_path='/data3/data_aishell/wav/'  #400 in total
-noise_path='/data3/noise/'  #400 in total
-# 训练文件列表
-TRAIN_LIST = aim_path+'/train_list'
-# 验证文件列表
-VALID_LIST = aim_path+'/valid_list'
-# 测试文件列表
-TEST_LIST = aim_path+'/test_list'
-# 未登录文件列表
-UNK_LIST = aim_path+'/unk_list'
+noise_path='/data3/noise/'
 
 def split_forTrainDevTest(given_list,train_or_test,phase):
     '''为了保证一个统一的训练和测试的划分标准，用通用的一些方法来限定一下,
@@ -95,7 +87,7 @@ def process_signal(signal,rate,aim_len,num_ordier=None):
     return signal
 
 
-def prepare_data(mode,train_or_test,min=None,max=None,add_noise=True):
+def prepare_data(mode,train_or_test,min=None,max=None,add_noise_ratio=0.5):
     '''
     :param
     mode: type str, 'global' or 'once' ， global用来获取全局的spk_to_idx的字典，所有说话人的列表等等
@@ -121,6 +113,7 @@ def prepare_data(mode,train_or_test,min=None,max=None,add_noise=True):
     multi_spk_wav_list=[] #应该是bs个dict，每个dict里是说话人name为key，clean_fea为value的字典
 
     #目标数据集的总data，底下应该存放分目录的文件夹，每个文件夹应该名字是sX
+    global aim_path,noise_path
     data_path=aim_path
 
     #语音刺激
@@ -190,11 +183,35 @@ def prepare_data(mode,train_or_test,min=None,max=None,add_noise=True):
                         multi_fea_dict_this_sample[spk]=some_fea_clean
                         multi_wav_dict_this_sample[spk]=signal
 
+
+                if add_noise_ratio: #添加noise的比例
+                    assert noise_path  #确保有noise的路径
+                    if random.random()<add_noise_ratio:
+                        all_noise_type=sorted(os.listdir(noise_path))
+                        sampled_noise_type=random.sample(all_noise_type,1)[0] #选出用哪儿一种噪
+                        noise_path_aim=noise_path+sampled_noise_type+'/'
+                        all_noise_samples=sorted(os.listdir(noise_path_aim))
+                        sampled_noise=random.sample(all_noise_samples,1)[0] #选出用哪儿一
+                        noise_path_aim=noise_path_aim+sampled_noise
+
+                        while True: #确保抽样出长度大于min_len
+                            noise, rate = sf.read(noise_path_aim)  # signal 是采样值，rate 是采样频率
+                            if noise.shape[0] < config.MIN_MIX:  # 根据最大长度裁剪
+                                continue
+                            else:
+                                break
+                        noise = process_signal(noise,rate, config.MAX_LEN, num_ordier=k)
+                        wav_mix = wav_mix + noise
+                        multi_wav_dict_this_sample['noise']=noise
+
                 multi_spk_fea_list.append(multi_fea_dict_this_sample) #把这个sample的dict传进去
                 multi_spk_wav_list.append(multi_wav_dict_this_sample) #把这个sample的dict传进去
 
+                # 混合语音的图谱
                 assert wav_mix.shape[0]==config.MAX_LEN
+                #TODO: 考虑下 是不是应该之在mix上做波形归一化
                 wav_mix=process_signal(wav_mix,rate,config.MAX_LEN)
+
                 # 这里采用log 以后可以考虑采用MFCC或GFCC特征做为输入
                 if config.IS_LOG_SPECTRAL:
                     feature_mix = np.log(np.transpose(np.abs(librosa.core.spectrum.stft(wav_mix, config.FRAME_LENGTH, config.FRAME_SHIFT,))) + np.spacing(1))
@@ -272,5 +289,5 @@ def prepare_data(mode,train_or_test,min=None,max=None,add_noise=True):
 
 print 'hh'
 cc=prepare_data('once','train')
-cc.next()
+bb=cc.next()
 pass
