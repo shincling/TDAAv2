@@ -7,27 +7,30 @@ import soundfile as sf
 import resampy
 import librosa
 import argparse
-import data.utils as utils
+import yaml
 
+class AttrDict(dict):
+    def __init__(self, *args, **kwargs):
+        super(AttrDict, self).__init__(*args, **kwargs)
+        self.__dict__ = self
+
+
+def read_config(path):
+
+    return AttrDict(yaml.load(open(path, 'r')))
 # Add the config.
 parser = argparse.ArgumentParser(description='predata scripts.')
-parser.add_argument('-config', default='config.yaml', type=str,
-# parser.add_argument('-config', default='config_mix.yaml', type=str,
+parser.add_argument('-config', default='config_CN.yaml', type=str,
                     help="config file")
 opt = parser.parse_args()
-config = utils.read_config(opt.config)
+config = read_config(opt.config)
 
-# config.MAX_LEN=29246
-# config.MAX_LEN=29184
-config.MAX_LEN=16243
-# config.MAX_LEN=14263
-# config.MAX_LEN=40000
-#config.MAX_LEN=80000
 channel_first=config.channel_first
 np.random.seed(1)#设定种子
 random.seed(1)
 
-aim_path='../../DL4SS_Keras/Torch_multi/Dataset_Multi/1/'+config.DATASET
+aim_path='/data3/data_aishell/wav/'  #400 in total
+noise_path='/data3/noise/'  #400 in total
 # 训练文件列表
 TRAIN_LIST = aim_path+'/train_list'
 # 验证文件列表
@@ -37,39 +40,68 @@ TEST_LIST = aim_path+'/test_list'
 # 未登录文件列表
 UNK_LIST = aim_path+'/unk_list'
 
-def split_forTrainDevTest(spk_list,train_or_test):
-    '''为了保证一个统一的训练和测试的划分标准，不得不用通用的一些方法来限定一下,
-    这里采用的是用sorted先固定方法的排序，那么不论方法或者seed怎么设置，训练测试的划分标准维持不变，
-    也就是数据集会维持一直'''
-    length=len(spk_list)
-    # spk_list=sorted(spk_list,key=lambda x:(x[1]))#这个意思是按照文件名的第二个字符排序
-    # spk_list=sorted(spk_list)#这个意思是按照文件名的第1个字符排序,暂时采用这种
-    spk_list=sorted(spk_list,key=lambda x:(x[-1]))#这个意思是按照文件名的最后一个字符排序
-    #TODO:暂时用最后一个字符排序，这个容易造成问题，可能第一个比较不一样的，这个需要注意一下
-    if train_or_test=='train':
-        return spk_list[:int(round(0.7*length))]
-    elif train_or_test=='valid':
-        return spk_list[(int(round(0.7*length))+1):int(round(0.8*length))]
-    elif train_or_test=='test':
-        return spk_list[(int(round(0.8*length))+1):]
+def split_forTrainDevTest(given_list,train_or_test,phase):
+    '''为了保证一个统一的训练和测试的划分标准，用通用的一些方法来限定一下,
+    数据一共有400个说话人，其中 train/eval占90%， test与他们不重合，占10% （划分依据是说话人ID的最后一个数字，如果是0,则是test
+    对于 train 和　eval，　按照每个说话人里面的语音片段最后一个字符来划分，８和９结束的为eval，否则为train
+
+    phase参数用来决定是说话人的划分，　train/eval　还是　 test，
+    　　　　　或者是train/eval里的具体音频片段的划分成　train 还是 eval　
+    '''
+    length=len(given_list)
+    #TODO:暂时用最后一个字符decide，这个容易造成问题，可能第一个比较不一样的，这个需要注意一下
+    if phase=='spks': #用来划分说话人是 train/valid 的 还是test的（不重合）
+        if train_or_test=='train' or train_or_test=='valid':
+            output_list=[name for name in given_list if name[-1]!='0'] #
+        else:
+            output_list=[name for name in given_list if name[-1]=='0'] # test spks covers 10% which not overlaped with train or valid.
+
+    elif phase=='wavs': #用来划分训练测试说话人里的没一条语音 train还是valid的语音
+        if train_or_test=='train':
+            output_list=[wav for wav in given_list if int(wav[-5]) in range(8)] # test spks covers 10% which not overlaped with train or valid.
+        elif train_or_test=='valid':
+            output_list=[wav for wav in given_list if wav[-5]=='8' or  wav[-5]=='9'] #
+        else:
+            raise ValueError('Wrong input of train or test in split wavs.')
+
     else:
-        raise ValueError('Wrong input of train_or_test.')
+        raise ValueError('Wrong input of phase.')
 
-def prepare_datasize(gen):
-    data=gen.next()
-    #此处顺序是 mix_speechs.shape,mix_feas.shape,aim_fea.shape,aim_spkid.shape,query.shape
-    #一个例子：(5, 17040) (5, 134, 129) (5, 134, 129) (5,) (5, 32, 400, 300, 3)
-    #暂时输出的是：语音长度、语音频率数量、视频截断之后的长度
-    print 'datasize:',data[1].shape[1],data[1].shape[2],data[4].shape[1],data[-1],(data[4].shape[2],data[4].shape[3])
-    return data[1].shape[1],data[1].shape[2],data[4].shape[1],data[-1],(data[4].shape[2],data[4].shape[3])
+    return output_list
 
-def prepare_data(mode,train_or_test,min=None,max=None):
+def process_signal(signal,rate,aim_len,num_ordier):
+    "输入语音wav信号，用来预处理合适的长度和采样率，已经确保是大于config.MIN_LEN了"
+    if len(signal.shape) > 1:
+        signal = signal[:, 0]
+
+    if rate != config.FRAME_RATE: # 先采样到设定的采样率上
+        # 如果频率不是设定的频率则需要进行转换
+        signal = resampy.resample(signal, rate, config.FRAME_RATE, filter='kaiser_best')
+
+    if signal.shape[0] > aim_len:  # 根据最大长度裁剪
+        signal = signal[:aim_len]
+
+    if num_ordier == 0 and signal.shape[0] < aim_len:  # 第一个信号根据最大长度用 0 补齐,
+        signal=np.append(signal,np.zeros(aim_len - signal.shape[0]))
+
+    if num_ordier != 0 and signal.shape[0] < aim_len:  # 之后的信号引入一个偏移，然后用根据最大长度用 0 补齐,
+        shift_frames=random.sample(range(aim_len - signal.shape[0]+1)) # 0~长度差
+        signal=np.append(np.append(np.zeros(shift_frames),signal),np.zeros(aim_len - signal.shape[0] - shift_frames))
+
+    if config.normalize: #如果需要归一化的话
+        signal -= np.mean(signal)  # 语音信号预处理，先减去均值
+        signal /= np.max(np.abs(signal))  # 波形幅值预处理，幅值归一化
+
+    return signal
+
+
+def prepare_data(mode,train_or_test,min=None,max=None,add_noise=True):
     '''
     :param
     mode: type str, 'global' or 'once' ， global用来获取全局的spk_to_idx的字典，所有说话人的列表等等
     train_or_test:type str, 'train','valid' or 'test'
-     其中把每个文件夹每个人的按文件名的排序的前70%作为训练，70-80%作为valid，最后20%作为测试
-    :return:
+     其中把每个文件夹每个人的按文件名的排序的前70%作为训练，70-80%作为valid (overlapped)，最后20%作为测试(unknonw spks)
+    :return: generator of dataset.
     '''
     # 如错有预订的min和max，主要是为了主程序做valid的时候统一某个固定的说话人的个数上
     if min:
@@ -80,6 +112,7 @@ def prepare_data(mode,train_or_test,min=None,max=None):
     mix_speechs=np.zeros((config.batch_size,config.MAX_LEN))
     mix_feas=[]#应该是bs,n_frames,n_fre这么多
     mix_phase=[]#应该是bs,n_frames,n_fre这么多
+    mix_phase=[]#应该是bs,n_frames,n_fre这么多
     aim_fea=[]#应该是bs,n_frames,n_fre这么多
     aim_spkid=[] #np.zeros(config.batch_size)
     aim_spkname=[] #np.zeros(config.batch_size)
@@ -88,132 +121,65 @@ def prepare_data(mode,train_or_test,min=None,max=None):
     multi_spk_wav_list=[] #应该是bs个dict，每个dict里是说话人name为key，clean_fea为value的字典
 
     #目标数据集的总data，底下应该存放分目录的文件夹，每个文件夹应该名字是sX
-    data_path=aim_path+'/data'
+    data_path=aim_path
+
     #语音刺激
     if config.MODE==1:
-        if config.DATASET=='WSJ0': #开始构建数据集
-            WSJ0_eval_list=['440', '441', '442', '443', '444', '445', '446', '447']
-            WSJ0_test_list=['22g', '22h', '050', '051', '052', '053', '420', '421', '422', '423']
-            all_spk_train=os.listdir(data_path+'/train')
-            all_spk_eval=os.listdir(data_path+'/eval')
-            all_spk_test=os.listdir(data_path+'/test')
-            all_spk_evaltest=os.listdir(data_path+'/eval_test')
-            all_spk = all_spk_train+all_spk_eval+all_spk_test
-            spk_samples_list={}
+        if config.DATASET=='CN': #开始构建数据集
+            all_spk=sorted(os.listdir(data_path))
             batch_idx=0
-            list_path='../../DL4SS_Keras/TDAA_beta/create-speaker-mixtures/'
-            all_samples_list={}
-            sample_idx={}
-            number_samples={}
-            batch_mix={}
-            mix_number_list=range(config.MIN_MIX,config.MAX_MIX+1)
-            number_samples_all=0
-            for mix_k in mix_number_list:
-                if train_or_test=='train':
-                    aim_list_path=list_path+'mix_{}_spk_tr.txt'.format(mix_k)
-                if train_or_test=='valid':
-                    aim_list_path=list_path+'mix_{}_spk_cv.txt'.format(mix_k)
-                if train_or_test=='test':
-                    aim_list_path=list_path+'mix_{}_spk_tt.txt'.format(mix_k)
-
-                all_samples_list[mix_k]=open(aim_list_path).readlines()#[:31]
-                number_samples[mix_k]=len(all_samples_list[mix_k])
-                batch_mix[mix_k]=len(all_samples_list[mix_k])/config.batch_size
-                number_samples_all+=len(all_samples_list[mix_k])
-
-                sample_idx[mix_k]=0#每个通道从0开始计数
-
-                if train_or_test=='train' and config.SHUFFLE_BATCH:
-                    random.shuffle(all_samples_list[mix_k])
-                    print '\nshuffle success!',all_samples_list[mix_k][0]
-
-            batch_total=number_samples_all/config.batch_size
+            batch_total=config.num_samples_one_epoch/config.batch_size
             print 'batch_total_num:',batch_total
+            number_samples_all=config.num_samples_one_epoch
 
-            mix_k=random.sample(mix_number_list,1)[0]
-            # while True:
-            for ___ in range(number_samples_all):
+            mix_number_list=range(config.MIN_MIX,config.MAX_MIX+1)
+            for ___ in range(number_samples_all): # 每一步合成一条语音
                 if ___==number_samples_all-1:
-                    print 'ends here.___'
+                    print 'This epoch ends here.'
                     yield False
+
                 mix_len=0
-                print mix_k,'mixed sample_idx[mix_k]:',sample_idx[mix_k],batch_idx
-                if sample_idx[mix_k]>=batch_mix[mix_k]*config.batch_size:
-                    print mix_k,'mixed data is over~trun to the others number.'
-                    mix_number_list.remove(mix_k)
-                    try:
-                        mix_k=random.sample(mix_number_list,1)[0]
-                    except ValueError:
-                        print 'seems there gets all over.'
-                        if len(mix_number_list)==0:
-                            print 'all mix number is over~!'
-                        yield False
-                    # mix_k=random.sample(mix_number_list,1)[0]
-                    batch_idx=0
-                    mix_speechs=np.zeros((config.batch_size,config.MAX_LEN))
-                    mix_feas=[]#应该是bs,n_frames,n_fre这么多
-                    mix_phase=[]
-                    aim_fea=[]#应该是bs,n_frames,n_fre这么多
-                    aim_spkid=[] #np.zeros(config.batch_size)
-                    aim_spkname=[]
-                    query=[]#应该是batch_size，shape(query)的形式，用list再转换把
-                    multi_spk_fea_list=[]
-                    multi_spk_wav_list=[]
-                    continue
-
-                all_over=1 #用来判断所有的是不是都结束了
-                for kkkkk in mix_number_list:
-                    if not sample_idx[kkkkk]>=batch_mix[mix_k]*config.batch_size:
-                        print kkkkk,'mixed data is not over'
-                        all_over=0
-                        break
-                    if all_over:
-                        print 'all mix number is over~!'
-                        yield False
-                    
-                # mix_k=random.sample(mix_number_list,1)[0]
-                if train_or_test=='train':
-                    aim_spk_k=random.sample(all_spk_train,mix_k)#本次混合的候选人
-                elif train_or_test=='eval':
-                    aim_spk_k=random.sample(all_spk_eval,mix_k)#本次混合的候选人
-                elif train_or_test=='test':
-                    aim_spk_k=random.sample(all_spk_test,mix_k)#本次混合的候选人
-                elif train_or_test=='eval_test':
-                    aim_spk_k=random.sample(all_spk_evaltest,mix_k)#本次混合的候选人
-
-                aim_spk_k=re.findall('/([0-9][0-9].)/',all_samples_list[mix_k][sample_idx[mix_k]])
-                aim_spk_db_k=map(float,re.findall(' (.*?) ',all_samples_list[mix_k][sample_idx[mix_k]]))
-                aim_spk_samplename_k=re.findall('/(.{8})\.wav ',all_samples_list[mix_k][sample_idx[mix_k]])
-                assert len(aim_spk_k)==mix_k==len(aim_spk_db_k)==len(aim_spk_samplename_k)
+                mix_k=random.sample(mix_number_list,1)[0] # 这一条需要几个说话人
+                aim_spk_lists=split_forTrainDevTest(all_spk,train_or_test,phase='spks') # find the spks with given train/valid/ or test
+                aim_spk_k=random.sample(aim_spk_lists,mix_k) # 这一条采样出来的说话人
 
                 multi_fea_dict_this_sample={}
                 multi_wav_dict_this_sample={}
                 multi_name_list_this_sample=[]
                 multi_db_dict_this_sample={}
 
-                # if 1 and config.dB and config.MIN_MIX==config.MAX_MIX==2:
-                #     dB_rate=10**(config.dB/20.0*np.random.rand())#e**(0——0.5)
-                #     print 'channel to change with dB:',dB_rate
+                if config.dB and config.MIN_MIX==config.MAX_MIX==2:
+                    dB_rate=10**(config.dB/20.0*np.random.rand())#e**(0——0.5)
+                    print 'channel to change with dB:',dB_rate
 
-                for k,spk in enumerate(aim_spk_k):
-                    #选择dB的通道～！
-                    sample_name=aim_spk_samplename_k[k]
-                    if train_or_test!='test':
-                        spk_speech_path=data_path+'/'+'train'+'/'+spk+'/'+sample_name+'.wav'
-                    else:
-                        spk_speech_path=data_path+'/'+'eval_test'+'/'+spk+'/'+sample_name+'.wav'
+                for k,spk in enumerate(aim_spk_k): #对于每个采样出来的说话人的一条
+                    path_this_spk=data_path+spk+'/'
+                    wavs_this_spk=os.listdir(path_this_spk)
+                    aim_wavs=split_forTrainDevTest(wavs_this_spk,train_or_test,phase='wavs') # find the spks with given train/valid/ or test
 
-                    signal, rate = sf.read(spk_speech_path)  # signal 是采样值，rate 是采样频率
+                    while True: #确保抽样出长度大于min_len
+                        sampled_wav_name=random.sample(aim_wavs,1)[0]
+                        spk_speech_path=path_this_spk+sampled_wav_name
+                        signal, rate = sf.read(spk_speech_path)  # signal 是采样值，rate 是采样频率
+                        if signal.shape[0] < config.MIN_MIX:  # 根据最大长度裁剪
+                            continue
+                        else:
+                            break
+
+
+                    if signal.shape[0] > config.MAX_LEN:  # 根据最大长度裁剪
+                        signal = signal[:config.MAX_LEN]
                     if len(signal.shape) > 1:
                         signal = signal[:, 0]
                     if rate != config.FRAME_RATE:
                         # 如果频率不是设定的频率则需要进行转换
                         signal = resampy.resample(signal, rate, config.FRAME_RATE, filter='kaiser_best')
-                    if signal.shape[0] > config.MAX_LEN:  # 根据最大长度裁剪
-                        signal = signal[:config.MAX_LEN]
+
+                    signal = process_signal(signal,rate, config.MAX_LEN, num_ordier=k)
+
                     # 更新混叠语音长度
-                    if signal.shape[0] > mix_len:
-                        mix_len = signal.shape[0]
+                    # if signal.shape[0] > mix_len:
+                    #     mix_len = signal.shape[0]
 
                     signal -= np.mean(signal)  # 语音信号预处理，先减去均值
                     signal /= np.max(np.abs(signal))  # 波形幅值预处理，幅值归一化
@@ -355,3 +321,8 @@ def prepare_data(mode,train_or_test,min=None,max=None):
 
     else:
         raise ValueError('No such Model:{}'.format(config.MODE))
+
+print 'hh'
+cc=prepare_data('once','train')
+cc.next()
+pass
