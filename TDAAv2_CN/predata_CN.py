@@ -2,7 +2,6 @@
 import os
 import numpy as np
 import random
-import re
 import soundfile as sf
 import resampy
 import librosa
@@ -25,10 +24,11 @@ parser.add_argument('-config', default='config_CN.yaml', type=str,
 opt = parser.parse_args()
 config = read_config(opt.config)
 
-channel_first=config.channel_first
+# channel_first=config.channel_first
 np.random.seed(1)#设定种子
 random.seed(1)
 
+#存放数据的位置，需要改动一下，这个是在70上的路径
 aim_path='/data3/data_aishell/wav/'  #400 in total
 noise_path='/data3/noise/'
 
@@ -91,8 +91,9 @@ def prepare_data(mode,train_or_test,min=None,max=None,add_noise_ratio=0.5):
     '''
     :param
     mode: type str, 'global' or 'once' ， global用来获取全局的spk_to_idx的字典，所有说话人的列表等等
+                     'once'用来获得真正的迭代器
     train_or_test:type str, 'train','valid' or 'test'
-     其中把每个文件夹每个人的按文件名的排序的前70%作为训练，70-80%作为valid (overlapped)，最后20%作为测试(unknonw spks)
+     其中把每个文件夹每个人的按文件名的排序的前72%作为训练，18%作为valid (overlapped)，最后10%作为测试(unknonw spks)
     :return: generator of dataset.
     '''
     # 如错有预订的min和max，主要是为了主程序做valid的时候统一某个固定的说话人的个数上
@@ -245,13 +246,18 @@ def prepare_data(mode,train_or_test,min=None,max=None,add_noise_ratio=0.5):
                         all_spk=sorted(all_spk)
                         all_spk.insert(0,'<BOS>') #添加两个结构符号，来标识开始或结束。
                         all_spk.append('<EOS>')
-                        all_spk_eval=sorted(all_spk_eval)
-                        all_spk_test=sorted(all_spk_test)
+                        # all_spk_eval=sorted(all_spk_eval)
+                        # all_spk_test=sorted(all_spk_test)
                         dict_spk_to_idx={spk:idx for idx,spk in enumerate(all_spk)}
                         dict_idx_to_spk={idx:spk for idx,spk in enumerate(all_spk)}
-                        yield all_spk,dict_spk_to_idx,dict_idx_to_spk,\
-                              aim_fea.shape[1],aim_fea.shape[2],32,len(all_spk),batch_total
-                              #上面的是：语音长度、语音频率、视频分割多少帧 TODO:后面把这个替换了query.shape[1]
+                        yield {'all_spk':all_spk,
+                               'dict_spk_to_idx':dict_spk_to_idx,
+                               'dict_idx_to_spk':dict_idx_to_spk,
+                               'num_fre':aim_fea.shape[2],#语音频率
+                               'num_frames':aim_fea.shape[1],#语音长度
+                                'total_spk_num':len(all_spk),
+                                'total_batch_num':batch_total
+                               }
                     elif mode=='once':
                         yield {'mix_wav':mix_speechs,
                                'mix_feas':mix_feas,
@@ -295,5 +301,7 @@ def prepare_data(mode,train_or_test,min=None,max=None,add_noise_ratio=0.5):
         raise ValueError('No such Model:{}'.format(config.MODE))
 
 cc=prepare_data('once','train')
+# cc=prepare_data('global','train')
 bb=cc.next()
+print bb
 pass
