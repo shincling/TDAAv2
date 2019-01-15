@@ -1,12 +1,13 @@
 data:  './data/data/save_data'
 log:  './data/data/log/'
-epoch:  200
+epoch:  200 #epoch总数
 batch_size: 36
 param_init:  0.1
 optim:  'adam'
 learning_rate:  0.0001
 max_grad_norm:  10
 learning_rate_decay:  0.5
+
 mask:  1
 schedule:  1
 bidirec:  1
@@ -39,8 +40,10 @@ is_SelfTune :  0
 is_dis: 0
 speech_cnn_net: 0 #是否采用CNN的结构来抽取
 relitu: 0
+# 设定speech multi acc的阈值alpha
+ALPHA :  0.5
+quchong_alpha: 1
 
-normalize: 1
 
 # 设定最小混叠说话人数，Minimum number of mixed speakers for training
 MIN_MIX :  1
@@ -49,7 +52,7 @@ MAX_MIX :  2
 # mode: 1 纯净语音刺激, 2 图片刺激, 3 视频刺激, 4 top-down概念刺激
 MODE :  1
 # 数据集
-# 1包括：THCHS-30 或者 WSJ0, TIMIT做为模型调试
+# 1包括：THCHS-30 或者 WSJ0, TIMIT做为模型调试,或者CN数据集
 # 2包括：ＭNIST
 # 3包括：AVA,GRID
 # 4包括：
@@ -57,21 +60,19 @@ MODE :  1
 DATASET :  'CN'
 #　组件
 is_ComlexMask :  1
-num_samples_one_epoch: 20000
+num_samples_one_epoch: 20000 #每一个epoch里的samples总数，用来控制epoch的大小
 
 # 是否在训练阶段用Ground Truth的分类结果
 Ground_truth :  1
 #query是否经过memory的再次更新
-Comm_with_Memory: 1
 Comm_with_Memory: 0
 # DNN/RNN隐层的维度 hidden units
 HIDDEN_UNITS :  300
 # DNN/RNN层数
 NUM_LAYERS :  2
 # Embedding大小,主要是给语音第三维那部分的
-#EMBEDDING_SIZE :  100
 EMBEDDING_SIZE :  50
-#EMBEDDING_SIZE :  8
+
 ATT_SIZE : 100 # 这个是SS里面参数ATT的最外层的统一的大小
 # 是否丰富数据
 AUGMENT_DATA :  0
@@ -86,32 +87,17 @@ FRAME_RATE :  16000
 FRAME_LENGTH : 256
 # 帧移(ms)
 FRAME_SHIFT :  64
-# 是否shuffle_batch
+# 是否shuffle_batch,由于现在都是随机采样，这个参数没有意义了
 SHUFFLE_BATCH :  1
-# 设定speech multi acc的阈值alpha
-ALPHA :  0.5
-quchong_alpha: 1
-voice_dB: 2.5
-noise_dB: -10
+voice_dB: 2.5 # 配置从-db～db的随机音量大小变换
+noise_dB: -10 # 从noise——db 到 0 的噪音变换
+normalize: 1 #是否波形归一化
 # 设置训练/开发/验证模型的最大语音长度(秒)
 MIN_LEN :  48000
 #MAX_LEN :  FRAME_RATE*MAX_LEN
 MAX_LEN :  160000
 # 帧长
 WINDOWS :  FRAME_LENGTH
-# 未登录说话人语音的最大额外条数
-UNK_SPK_SUPP :  3
 START_EALY_STOP :  0
 # 特征Spectral of Log Spectral
-IS_LOG_SPECTRAL :  0
-# DB_THRESHOLD :  40  # None
-# 添加背景噪音（Str）
-ADD_BGD_NOISE :  1
-#BGD_NOISE_WAV :  0
-#BGD_NOISE_FILE :  'Dataset_Multi/BGD_150203_010_STR.CH1.wav'
-Out_Sep_Result: 1
-
-VideoSize: (299,299)
-NUM_ALL_FRAMES: 25
-VIDEO_RATE: 10
-channel_first: 1
+IS_LOG_SPECTRAL :  0 #默认都是0
