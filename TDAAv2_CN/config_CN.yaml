@@ -91,7 +91,8 @@ SHUFFLE_BATCH :  1
 # 设定speech multi acc的阈值alpha
 ALPHA :  0.5
 quchong_alpha: 1
-dB: 5
+voice_dB: 2.5
+noise_dB: -10
 # 设置训练/开发/验证模型的最大语音长度(秒)
 MIN_LEN :  48000
 #MAX_LEN :  FRAME_RATE*MAX_LEN

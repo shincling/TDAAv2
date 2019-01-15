@@ -138,12 +138,8 @@ def prepare_data(mode,train_or_test,min=None,max=None,add_noise_ratio=0.5):
 
                 multi_fea_dict_this_sample={}
                 multi_wav_dict_this_sample={}
-                multi_name_list_this_sample=[]
-                multi_db_dict_this_sample={}
-
-                if config.dB and config.MIN_MIX==config.MAX_MIX==2:
-                    dB_rate=10**(config.dB/20.0*np.random.rand())#e**(0——0.5)
-                    print 'channel to change with dB:',dB_rate
+                # multi_name_list_this_sample=[]
+                # multi_db_dict_this_sample={}
 
                 for k,spk in enumerate(aim_spk_k): #对于每个采样出来的说话人的一条
                     path_this_spk=data_path+spk+'/'
@@ -162,8 +158,11 @@ def prepare_data(mode,train_or_test,min=None,max=None,add_noise_ratio=0.5):
                     signal = process_signal(signal,rate, config.MAX_LEN, num_ordier=k)
 
                     if k==0:#第一个作为目标
-                        # ratio=10**(aim_spk_db_k[k]/20.0)
-                        # signal=ratio*signal
+                        if config.voice_dB :
+                            dB_rate=np.random.uniform(-1*config.voice_dB,config.voice_dB,1)#10**(-0.25——0.25)
+                            ratio=10**(dB_rate/10.0)
+                            # print 'the {} signal with ratio:{}'.format(k,ratio)
+                            signal=ratio*signal
                         aim_spkname.append(aim_spk_k[0])
                         aim_spkid.append(aim_spkname)
                         wav_mix=signal
@@ -175,8 +174,11 @@ def prepare_data(mode,train_or_test,min=None,max=None,add_noise_ratio=0.5):
                         multi_wav_dict_this_sample[spk]=signal
 
                     else:
-                        # ratio=10**(aim_spk_db_k[k]/20.0)
-                        # signal=ratio*signal
+                        if config.voice_dB :
+                            dB_rate=np.random.uniform(-1*config.voice_dB,config.voice_dB,1)#10**(-0.25——0.25)
+                            ratio=10**(dB_rate/10.0)
+                            signal=ratio*signal
+                            # print 'the {} signal with ratio:{}'.format(k,ratio)
                         wav_mix = wav_mix + signal  # 混叠后的语音
                         if not config.IS_LOG_SPECTRAL:
                             some_fea_clean = np.transpose(np.abs(librosa.core.spectrum.stft(signal, config.FRAME_LENGTH, config.FRAME_SHIFT,)))
@@ -201,6 +203,11 @@ def prepare_data(mode,train_or_test,min=None,max=None,add_noise_ratio=0.5):
                             else:
                                 break
                         noise = process_signal(noise,rate, config.MAX_LEN, num_ordier=k)
+                        if config.noise_dB :
+                            dB_rate=np.random.uniform(config.noise_dB,0,1)#10**(-1——0)
+                            ratio=10**(dB_rate/10.0)
+                            noise=ratio*noise
+                            # print 'the noise with ratio:{}'.format(ratio)
                         wav_mix = wav_mix + noise
                         multi_wav_dict_this_sample['noise']=noise
 
@@ -230,8 +237,8 @@ def prepare_data(mode,train_or_test,min=None,max=None,add_noise_ratio=0.5):
                     mix_phase=np.array(mix_phase)
                     aim_fea=np.array(aim_fea)
                     query=np.array(query)
-                    print 'spk_list_from_this_gen:{}'.format(aim_spkname)
-                    print 'aim spk list:', [one.keys() for one in multi_spk_fea_list]
+                    # print 'aim_spk_list_from_this_gen:{}'.format(aim_spkname)
+                    print 'spk_list_from_this_gen:', [one.keys() for one in multi_spk_fea_list]
                     # print '\nmix_speechs.shape,mix_feas.shape,aim_fea.shape,aim_spkname.shape,query.shape,all_spk_num:'
                     # print mix_speechs.shape,mix_feas.shape,aim_fea.shape,len(aim_spkname),query.shape,len(all_spk)
                     if mode=='global':
@@ -287,7 +294,6 @@ def prepare_data(mode,train_or_test,min=None,max=None,add_noise_ratio=0.5):
     else:
         raise ValueError('No such Model:{}'.format(config.MODE))
 
-print 'hh'
 cc=prepare_data('once','train')
 bb=cc.next()
 pass
