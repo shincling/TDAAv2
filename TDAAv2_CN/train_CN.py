@@ -231,18 +231,19 @@ def train(epoch):
         src = Variable(torch.from_numpy(train_data['mix_feas']))
         # raw_tgt = [spk.keys() for spk in train_data['multi_spk_fea_list']]
         raw_tgt = [sorted(spk.keys()) for spk in train_data['multi_spk_fea_list']]
-        feas_tgt=models.rank_feas(raw_tgt,train_data['multi_spk_fea_list']) #这里是目标的图谱
+        # feas_tgt=models.rank_feas(raw_tgt,train_data['multi_spk_fea_list']) #这里是目标的图谱
 
         # 要保证底下这几个都是longTensor(长整数）
-        tgt = Variable(torch.from_numpy(np.array([[0]+[dict_spk2idx[spk] for spk in spks]+[dict_spk2idx['<EOS>']] for spks in raw_tgt],dtype=np.int))).transpose(0,1) #转换成数字，然后前后加开始和结束符号。
+        tgt_max_len=config.MAX_MIX+2 # with bos and eos.
+        tgt = Variable(torch.from_numpy(np.array([[0]+[dict_spk2idx[spk] for spk in spks]+(tgt_max_len-len(spks)-1)*[dict_spk2idx['<EOS>']] for spks in raw_tgt],dtype=np.int))).transpose(0,1) #转换成数字，然后前后加开始和结束符号。
         src_len = Variable(torch.LongTensor(config.batch_size).zero_()+mix_speech_len).unsqueeze(0)
-        tgt_len = Variable(torch.LongTensor(config.batch_size).zero_()+len(train_data['multi_spk_fea_list'][0])).unsqueeze(0)
+        tgt_len = Variable(torch.LongTensor([len(one_spk) for one_spk in train_data['multi_spk_fea_list']])).unsqueeze(0)
         if use_cuda:
             src = src.cuda().transpose(0,1)
             tgt = tgt.cuda()
             src_len = src_len.cuda()
             tgt_len = tgt_len.cuda()
-            feas_tgt = feas_tgt.cuda()
+            # feas_tgt = feas_tgt.cuda()
 
         model.zero_grad()
         # optim.optimizer.zero_grad()
@@ -259,7 +260,7 @@ def train(epoch):
         # expand the raw mixed-features to topk channel.
         siz=src.size()
         assert len(siz)==3
-        topk=feas_tgt.size()[1]
+        # topk=feas_tgt.size()[1]
         x_input_map_multi=torch.unsqueeze(src,1).expand(siz[0],topk,siz[1],siz[2])
         multi_mask=multi_mask.transpose(0,1)
 
