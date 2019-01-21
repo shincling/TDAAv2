@@ -9,10 +9,9 @@ import torch.nn.functional as F
 def rank_feas(raw_tgt,feas_list):
     final_num=[]
     for each_feas,each_line in zip(feas_list,raw_tgt):
-        line_num=[]
         for spk in each_line:
-            line_num.append(each_feas[spk])
-        final_num.append(line_num)
+            final_num.append(each_feas[spk])
+    # 目标就是这个batch里一共有多少条比如 1spk 3spk 2spk,最后就是6个spk的特征
     return torch.from_numpy(np.array(final_num))
 
 
@@ -69,10 +68,11 @@ def ss_loss(config,x_input_map_multi,multi_mask,y_multi_map,loss_multi_func):
     loss_multi_speech=loss_multi_func(predict_multi_map,y_multi_map)
 
     #各通道和为１的loss部分,应该可以更多的带来差异
-    y_sum_map=Variable(torch.ones(config.batch_size,config.mix_speech_len,config.speech_fre)).cuda()
-    predict_sum_map=torch.sum(multi_mask,1)
-    loss_multi_sum_speech=loss_multi_func(predict_sum_map,y_sum_map)
-    print 'loss 1 eval, losssum eval : ',loss_multi_speech.data.cpu().numpy(),loss_multi_sum_speech.data.cpu().numpy()
+    # y_sum_map=Variable(torch.ones(config.batch_size,config.mix_speech_len,config.speech_fre)).cuda()
+    # predict_sum_map=torch.sum(multi_mask,1)
+    # loss_multi_sum_speech=loss_multi_func(predict_sum_map,y_sum_map)
+    print 'loss 1 eval:  ',loss_multi_speech.data.cpu().numpy()
+    # print 'losssum eval :',loss_multi_sum_speech.data.cpu().numpy()
     # loss_multi_speech=loss_multi_speech+0.5*loss_multi_sum_speech
     print 'evaling multi-abs norm this eval batch:',torch.abs(y_multi_map-predict_multi_map).norm().data.cpu().numpy()
     # loss_multi_speech=loss_multi_speech+3*loss_multi_sum_speech
