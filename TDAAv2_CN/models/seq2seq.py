@@ -55,7 +55,7 @@ class seq2seq(nn.Module):
         Var=torch.mean(Var,0) #在batch的维度上平均
         return Var.detach()
 
-    def forward(self, src, src_len, tgt, tgt_len):
+    def forward(self, src, src_len, tgt, tgt_len,dict_spk2idx):
         # 感觉这是个把一个batch里的数据按从长到短调整顺序的意思
         lengths, indices = torch.sort(src_len.squeeze(0), dim=0, descending=True)
         # todo: 这里只要一用排序，tgt那个就出问题，现在的长度都一样，所以没有排序也可以工作，这个得好好研究一下后面
@@ -76,7 +76,7 @@ class seq2seq(nn.Module):
         else:
             outputs, final_state, global_embs = self.decoder(tgt[:-1], state, contexts.transpose(0, 1))
             # 这里的outputs就是没个step输出的隐层向量,大小是len+1,bs,emb（注意是第一个词到 EOS的总共）
-            predicted_maps=self.ss_model(src,global_embs,tgt[1:-1])
+            predicted_maps=self.ss_model(src,global_embs,tgt[1:-1],dict_spk2idx)
 
         return outputs, tgt[1:], predicted_maps.transpose(0,1)
 

@@ -144,7 +144,7 @@ class rnn_decoder(nn.Module):
             return outputs, state, embs
         else:
             outputs, state, attns, global_embs = [], init_state, [], []
-            embs = self.embedding(inputs).split(1)
+            embs = self.embedding(inputs).split(1) #time_step [1,bs,embsize]
             max_time_step = len(embs)
             emb = embs[0] #第一步BOS的embedding.
             output, state = self.rnn(emb.squeeze(0), state)

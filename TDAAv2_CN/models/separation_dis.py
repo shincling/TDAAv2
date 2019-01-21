@@ -280,20 +280,40 @@ class SS(nn.Module):
         # print self.dis_layer
 
 
-    def forward(self, mix_feas, hidden_outputs, targets):
+    def forward(self, mix_feas, hidden_outputs, targets, dict_spk2idx=None):
+        '''
+        :param targets:这个targets的大小是：topk,bs 注意后面要transpose
+        123  324  345
+        323  E     E
+        这种样子的，所以要去找aim_list 应该找到的结果是,先transpose之后，然后flatten，然后取不是E的：[0 1 2 4 ]
+
+        '''
+
         config=self.config
-        top_k_num,batch_size=targets.size()
+        top_k_max,batch_size=targets.size() #这个top_k_max其实就是最多有几个说话人，应该是跟Max_MIX是保持一样的
+        assert top_k_max==config.MAX_MIX
+        aim_list=(targets.transpose(0,1).contiguous().view(-1)!=dict_spk2idx['<EOS>']).nonzero().squeeze()
+        aim_list=aim_list.data.cpu().numpy()
+
+
         mix_speech_hidden,mix_tmp_hidden=self.mix_hidden_layer_3d(mix_feas)
         mix_speech_multiEmbs=torch.transpose(hidden_outputs,0,1).contiguous()# bs*num_labels（最多混合人个数）×Embedding的大小
+        mix_speech_multiEmbs=mix_speech_multiEmbs.view(-1,config.SPK_EMB_SIZE)# bs*num_labels（最多混合人个数）×Embedding的大小
+        # assert mix_speech_multiEmbs.size()[0]==targets.shape
+        mix_speech_multiEmbs=mix_speech_multiEmbs[aim_list] # aim_num,embs
+        # print mix_speech_multiEmbs.shape
         if self.config.is_SelfTune:
+            # TODO: 这里应该也是有问题的，暂时不用selfTune
             mix_adjust=self.adjust_layer(mix_tmp_hidden,mix_speech_multiEmbs)
             mix_speech_multiEmbs=mix_adjust+mix_speech_multiEmbs
         mix_speech_hidden_5d=mix_speech_hidden.view(batch_size,1,self.mix_speech_len,self.speech_fre,config.EMBEDDING_SIZE)
-        mix_speech_hidden_5d=mix_speech_hidden_5d.expand(batch_size,top_k_num,self.mix_speech_len,self.speech_fre,config.EMBEDDING_SIZE).contiguous()
+        mix_speech_hidden_5d=mix_speech_hidden_5d.expand(batch_size,top_k_max,self.mix_speech_len,self.speech_fre,config.EMBEDDING_SIZE).contiguous()
         mix_speech_hidden_5d_last=mix_speech_hidden_5d.view(-1,self.mix_speech_len,self.speech_fre,config.EMBEDDING_SIZE)
+        mix_speech_hidden_5d_last=mix_speech_hidden_5d_last[aim_list]
         att_multi_speech=self.att_speech_layer(mix_speech_hidden_5d_last,mix_speech_multiEmbs.view(-1,config.SPK_EMB_SIZE))
-        att_multi_speech=att_multi_speech.view(batch_size,top_k_num,self.mix_speech_len,self.speech_fre) # bs,num_labels,len,fre这个东西
+        att_multi_speech=att_multi_speech.view(-1,self.mix_speech_len,self.speech_fre) # bs,num_labels,len,fre这个东西
         multi_mask=att_multi_speech
+        assert multi_mask.shape[0]==len(aim_list)
         return multi_mask
 
 

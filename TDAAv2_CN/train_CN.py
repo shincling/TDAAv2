@@ -27,7 +27,8 @@ parser = argparse.ArgumentParser(description='train_CN.py')
 
 parser.add_argument('-config', default='config_CN.yaml', type=str,
                     help="config file")
-parser.add_argument('-gpus', default=[2,3,4], nargs='+', type=int,
+# parser.add_argument('-gpus', default=[2,3,4], nargs='+', type=int,
+parser.add_argument('-gpus', default=[2], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
 parser.add_argument('-restore', default=None, type=str,
                    help="restore checkpoint")
@@ -231,7 +232,8 @@ def train(epoch):
         src = Variable(torch.from_numpy(train_data['mix_feas']))
         # raw_tgt = [spk.keys() for spk in train_data['multi_spk_fea_list']]
         raw_tgt = [sorted(spk.keys()) for spk in train_data['multi_spk_fea_list']]
-        # feas_tgt=models.rank_feas(raw_tgt,train_data['multi_spk_fea_list']) #这里是目标的图谱
+        feas_tgt=models.rank_feas(raw_tgt,train_data['multi_spk_fea_list']) #这里是目标的图谱,aim_size,len,fre
+
 
         # 要保证底下这几个都是longTensor(长整数）
         tgt_max_len=config.MAX_MIX+2 # with bos and eos.
@@ -243,11 +245,16 @@ def train(epoch):
             tgt = tgt.cuda()
             src_len = src_len.cuda()
             tgt_len = tgt_len.cuda()
-            # feas_tgt = feas_tgt.cuda()
+            feas_tgt = feas_tgt.cuda()
 
         model.zero_grad()
         # optim.optimizer.zero_grad()
-        outputs, targets, multi_mask = model(src, src_len, tgt, tgt_len) #这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
+
+        # aim_list 就是找到有正经说话人的地方的标号
+        aim_list=(tgt[1:-1].transpose(0,1).contiguous().view(-1)!=dict_spk2idx['<EOS>']).nonzero().squeeze()
+        aim_list=aim_list.data.cpu().numpy()
+
+        outputs, targets, multi_mask = model(src, src_len, tgt, tgt_len,dict_spk2idx) #这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
         print 'mask size:',multi_mask.size()
 
         if 1 and len(opt.gpus) > 1:
@@ -257,11 +264,12 @@ def train(epoch):
         print 'loss for SGM,this batch:',sgm_loss.data[0]/num_total
 
         src=src.transpose(0,1)
-        # expand the raw mixed-features to topk channel.
+        # expand the raw mixed-features to topk_max channel.
         siz=src.size()
         assert len(siz)==3
-        # topk=feas_tgt.size()[1]
-        x_input_map_multi=torch.unsqueeze(src,1).expand(siz[0],topk,siz[1],siz[2])
+        topk_max=config.MAX_MIX #最多可能的topk个数
+        x_input_map_multi=torch.unsqueeze(src,1).expand(siz[0],topk_max,siz[1],siz[2]).contiguous().view(-1,siz[1],siz[2])
+        x_input_map_multi=x_input_map_multi[aim_list]
         multi_mask=multi_mask.transpose(0,1)
 
         if 1 and len(opt.gpus) > 1:
@@ -274,10 +282,10 @@ def train(epoch):
         else:
             ss_loss = model.separation_loss(x_input_map_multi, multi_mask, feas_tgt)
 
-        loss=sgm_loss+ss_loss
+        loss=sgm_loss+5*ss_loss
         # dis_loss model
         if config.is_dis:
-            dis_loss=models.loss.dis_loss(config,topk,model_dis,x_input_map_multi,multi_mask,feas_tgt,func_dis)
+            dis_loss=models.loss.dis_loss(config,topk_max,model_dis,x_input_map_multi,multi_mask,feas_tgt,func_dis)
             loss = loss+dis_loss
             # print 'dis_para',model_dis.parameters().next()[0]
             # print 'ss_para',model.parameters().next()[0]
@@ -308,10 +316,13 @@ def train(epoch):
             logging("time: %6.3f, epoch: %3d, updates: %8d, train loss: %6.5f\n"
                     % (time.time()-start_time, epoch, updates, total_loss / report_total))
             print('evaluating after %d updates...\r' % updates)
-            score = eval(epoch)
+            # score = eval(epoch)
             for metric in config.metric:
                 scores[metric].append(score[metric])
-                if metric == 'micro_f1' and score[metric] >= max(scores[metric]):  
+                lera.log({
+                    'sgm_micro_f1': score[metric],
+                })
+                if metric == 'micro_f1' and score[metric] >= max(scores[metric]):
                     save_model(log_path+'best_'+metric+'_checkpoint.pt')
                 if metric == 'hamming_loss' and score[metric] <= min(scores[metric]):
                     save_model(log_path+'best_'+metric+'_checkpoint.pt')
@@ -322,7 +333,7 @@ def train(epoch):
             report_total = 0
 
         if updates % config.save_interval == 1:
-            save_model(log_path+'checkpoint_v2_withdis{}.pt'.format(config.is_dis))
+            save_model(log_path+'sscn_v01a.pt')
 
 
 def eval(epoch):
@@ -384,12 +395,12 @@ def eval(epoch):
             predicted_masks=torch.cat([predicted_masks,1-predicted_masks],1)
 
         # '''
-        # expand the raw mixed-features to topk channel.
+        # expand the raw mixed-features to topk_max channel.
         src = src.transpose(0,1)
         siz=src.size()
         assert len(siz)==3
-        topk=feas_tgt.size()[1]
-        x_input_map_multi=torch.unsqueeze(src,1).expand(siz[0],topk,siz[1],siz[2])
+        topk_max=feas_tgt.size()[1]
+        x_input_map_multi=torch.unsqueeze(src,1).expand(siz[0],topk_max,siz[1],siz[2])
         if config.WFM:
             feas_tgt=x_input_map_multi.data*WFM_mask
         if 1 and len(opt.gpus) > 1:
