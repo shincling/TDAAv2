@@ -79,7 +79,7 @@ def process_signal(signal, rate, aim_len, normalize=True, num_ordier=None):
 
     if normalize and config.normalize:  # 如果需要归一化的话
         signal -= np.mean(signal)  # 语音信号预处理，先减去均值
-        signal /= np.max(np.abs(signal))  # 波形幅值预处理，幅值归一化
+        signal /= (np.max(np.abs(signal))+np.spacing(1))  # 波形幅值预处理，幅值归一化
 
     if num_ordier == 0 and signal.shape[0] < aim_len:  # 第一个信号根据最大长度用 0 补齐,
         signal = np.append(signal, np.zeros(aim_len - signal.shape[0]))
@@ -196,19 +196,19 @@ def prepare_data(mode, train_or_test, min=None, max=None, add_noise_ratio=0.5):
                 if add_noise_ratio:  # 添加noise的比例
                     assert noise_path  # 确保有noise的路径
                     if random.random() < add_noise_ratio:
-                        all_noise_type = sorted(os.listdir(noise_path))
-                        sampled_noise_type = random.sample(all_noise_type, 1)[0]  # 选出用哪儿一种噪
-                        noise_path_aim = noise_path + sampled_noise_type + '/'
-                        all_noise_samples = sorted(os.listdir(noise_path_aim))
-                        sampled_noise = random.sample(all_noise_samples, 1)[0]  # 选出用哪儿一
-                        noise_path_aim = noise_path_aim + sampled_noise
-
                         while True:  # 确保抽样出长度大于min_len
+                            all_noise_type = sorted(os.listdir(noise_path))
+                            sampled_noise_type = random.sample(all_noise_type, 1)[0]  # 选出用哪儿一种噪
+                            noise_path_aim = noise_path + sampled_noise_type + '/'
+                            all_noise_samples = sorted(os.listdir(noise_path_aim))
+                            sampled_noise = random.sample(all_noise_samples, 1)[0]  # 选出用哪儿一
+                            noise_path_aim = noise_path_aim + sampled_noise
                             noise, rate = sf.read(noise_path_aim)  # signal 是采样值，rate 是采样频率
                             if noise.shape[0] < config.MIN_LEN:  # 根据最大长度裁剪
                                 continue
                             else:
                                 break
+
                         noise = process_signal(noise, rate, config.MAX_LEN, num_ordier=k)
                         if config.noise_dB:
                             dB_rate = np.random.uniform(config.noise_dB, 0, 1)  # 10**(-1——0)
