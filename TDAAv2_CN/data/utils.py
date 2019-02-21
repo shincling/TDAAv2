@@ -152,3 +152,48 @@ def bss_eval(config, predict_multi_map,y_multi_map,y_map_gtruth,train_data,dst='
             sf.write(dst+'/{}_{}_genTrue.wav'.format(sample_idx,this_spk),wav_gen_True[:min_len],config.FRAME_RATE,)
         sf.write(dst+'/{}_True_mix.wav'.format(sample_idx),train_data['mix_wav'][sample_idx][:min_len],config.FRAME_RATE,)
         sample_idx+=1
+
+def bss_eval2(config, predict_multi_map,y_multi_map,y_map_gtruth,train_data,dst='batch_output'):
+    # dst='batch_output'
+    if os.path.exists(dst):
+        print " \ncleanup: " + dst + "/"
+        shutil.rmtree(dst)
+    os.makedirs(dst)
+
+    for sample_idx,each_sample in enumerate(train_data['multi_spk_wav_list']):
+        for each_spk in each_sample.keys():
+            this_spk=each_spk
+            wav_genTrue=each_sample[this_spk]
+            # min_len = 39936
+            min_len = len(wav_genTrue)
+            if config.FRAME_SHIFT==64:
+                min_len = len(wav_genTrue)
+            sf.write(dst+'/{}_{}_realTrue.wav'.format(sample_idx,this_spk),wav_genTrue[:min_len],config.FRAME_RATE,)
+
+    predict_multi_map_list=[]
+    pointer=0
+    for each_line in y_map_gtruth:
+        predict_multi_map_list.append(predict_multi_map[pointer:(pointer+len(each_line))])
+        pointer+=len(each_line)
+    assert len(predict_multi_map_list)==len(y_map_gtruth)
+
+    # 对于每个sample
+    sample_idx=0 #代表一个batch里的依次第几个
+    for each_y,each_pre,each_trueVector,spk_name in zip(y_multi_map,predict_multi_map_list,y_map_gtruth,train_data['aim_spkname']):
+        _mix_spec=train_data['mix_phase'][sample_idx]
+        feas_tgt=train_data['multi_spk_fea_list'][sample_idx]
+        phase_mix = np.angle(_mix_spec)
+        each_pre=each_pre[0]
+        for idx,one_cha in enumerate(each_trueVector):
+            this_spk=one_cha
+            y_pre_map=each_pre[idx].data.cpu().numpy()
+            _pred_spec = y_pre_map * np.exp(1j * phase_mix)
+            wav_pre=librosa.core.spectrum.istft(np.transpose(_pred_spec), config.FRAME_SHIFT)
+            min_len =  len(wav_pre)
+            sf.write(dst+'/{}_{}_pre.wav'.format(sample_idx,this_spk),wav_pre[:min_len],config.FRAME_RATE,)
+
+            gen_true_spec=feas_tgt[this_spk]* np.exp(1j * phase_mix)
+            wav_gen_True=librosa.core.spectrum.istft(np.transpose(gen_true_spec), config.FRAME_SHIFT)
+            sf.write(dst+'/{}_{}_genTrue.wav'.format(sample_idx,this_spk),wav_gen_True[:min_len],config.FRAME_RATE,)
+        sf.write(dst+'/{}_True_mix.wav'.format(sample_idx),train_data['mix_wav'][sample_idx][:min_len],config.FRAME_RATE,)
+        sample_idx+=1

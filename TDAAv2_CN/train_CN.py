@@ -27,8 +27,8 @@ parser = argparse.ArgumentParser(description='train_CN.py')
 
 parser.add_argument('-config', default='config_CN.yaml', type=str,
                     help="config file")
-parser.add_argument('-gpus', default=range(8), nargs='+', type=int,
-# parser.add_argument('-gpus', default=[2], nargs='+', type=int,
+# parser.add_argument('-gpus', default=range(8), nargs='+', type=int,
+parser.add_argument('-gpus', default=[2], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
 parser.add_argument('-restore', default='sscn_v01a_wfm.pt', type=str,
 # parser.add_argument('-restore', default='sscn_v01a_264001.pt', type=str,
@@ -42,7 +42,7 @@ parser.add_argument('-score', default='', type=str,
                     help="score_fn")
 parser.add_argument('-pretrain', default=False, type=bool,
                     help="load pretrain embedding")
-parser.add_argument('-notrain', default=0, type=bool,
+parser.add_argument('-notrain', default=1, type=bool,
                     help="train or not")
 parser.add_argument('-limit', default=0, type=int,
                     help="data limit")
@@ -377,18 +377,21 @@ def eval(epoch):
         print '-'*30
         eval_data=eval_data_gen.next()
         if eval_data==False:
+            print 'SDR_aver_eval_epoch:',SDR_SUM.mean()
             break #如果这个epoch的生成器没有数据了，直接进入下一个epoch
         src = Variable(torch.from_numpy(eval_data['mix_feas']))
 
         raw_tgt = [sorted(spk.keys()) for spk in eval_data['multi_spk_fea_list']]
+        feas_tgt=models.rank_feas(raw_tgt,eval_data['multi_spk_fea_list']) #这里是目标的图谱
+
         top_k=len(raw_tgt[0])
         # 要保证底下这几个都是longTensor(长整数）
         # tgt = Variable(torch.from_numpy(np.array([[0]+[dict_spk2idx[spk] for spk in spks]+[dict_spk2idx['<EOS>']] for spks in raw_tgt],dtype=np.int))).transpose(0,1) #转换成数字，然后前后加开始和结束符号。
         tgt = Variable(torch.ones(top_k+2,config.batch_size)) # 这里随便给一个tgt，为了测试阶段tgt的名字无所谓其实。
 
         src_len = Variable(torch.LongTensor(config.batch_size).zero_()+mix_speech_len).unsqueeze(0)
-        tgt_len = Variable(torch.LongTensor(config.batch_size).zero_()+len(eval_data['multi_spk_fea_list'][0])).unsqueeze(0)
-        feas_tgt=models.rank_feas(raw_tgt,eval_data['multi_spk_fea_list']) #这里是目标的图谱
+        tgt_len = Variable(torch.LongTensor([len(one_spk) for one_spk in eval_data['multi_spk_fea_list']])).unsqueeze(0)
+        # tgt_len = Variable(torch.LongTensor(config.batch_size).zero_()+len(eval_data['multi_spk_fea_list'][0])).unsqueeze(0)
         if config.WFM:
             tmp_size=feas_tgt.size()
             assert len(tmp_size)==4
@@ -412,7 +415,7 @@ def eval(epoch):
             else:
                 samples, alignment, hiddens, predicted_masks = model.beam_sample(src, src_len, dict_spk2idx, tgt, beam_size=config.beam_size)
                 # samples, alignment, hiddens, predicted_masks = model.beam_sample(src, src_len, dict_spk2idx, tgt, beam_size=config.beam_size)
-        except Exception,info:
+        except TabError,info:
             print '**************Error occurs here************:', info
             continue
 
@@ -425,6 +428,8 @@ def eval(epoch):
         siz=src.size()
         assert len(siz)==3
         topk_max=feas_tgt.size()[1]
+        assert samples[0][-1]==dict_spk2idx['<EOS>']
+        topk_max=len(samples[0])-1
         x_input_map_multi=torch.unsqueeze(src,1).expand(siz[0],topk_max,siz[1],siz[2])
         if config.WFM:
             feas_tgt=x_input_map_multi.data*WFM_mask
@@ -443,7 +448,7 @@ def eval(epoch):
         if batch_idx<=(500/config.batch_size): #only the former batches counts the SDR
             predicted_maps=predicted_masks*x_input_map_multi
             # predicted_maps=Variable(feas_tgt)
-            utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_outputwaddd')
+            utils.bss_eval2(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_outputwaddd')
             del predicted_maps,predicted_masks,x_input_map_multi
             SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_outputwaddd/'))
             print 'SDR_aver_now:',SDR_SUM.mean()
