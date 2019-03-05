@@ -260,6 +260,8 @@ def prepare_data(mode,train_or_test,min=None,max=None):
                 # wav_mix, rate = sf.read('/data3/shijing/01t.wav')  # wav_mix 是采样值，rate 是采样频率
                 # wav_mix, rate = sf.read('/data3/shijing/聊天-单通道语音.wav')  # wav_mix 是采样值，rate 是采样频率
                 wav_mix, rate = sf.read('/data3/shijing/朗读-单通道语音.wav')  # wav_mix 是采样值，rate 是采样频率
+
+                wav_mix, rate = sf.read('/data3/shijing/cw-mix.wav')  # wav_mix 是采样值，rate 是采样频率
                 if len(wav_mix.shape) > 1:
                     wav_mix = wav_mix[:, 0]
                 if rate != config.FRAME_RATE:

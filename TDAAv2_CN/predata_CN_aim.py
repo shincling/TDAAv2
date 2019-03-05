@@ -26,6 +26,7 @@ parser.add_argument('-config', default='config_CN.yaml', type=str,
 opt = parser.parse_args()
 config = read_config(opt.config)
 
+config.MAX_LEN=213612
 # channel_first=config.channel_first
 np.random.seed(1)  # 设定种子
 random.seed(1)
@@ -33,6 +34,9 @@ random.seed(1)
 # 存放数据的位置，需要改动一下，这个是在70上的路径
 aim_path = '/data3/data_aishell/wav/'  # 400 in total
 noise_path = '/data3/noise/'
+aim_wav='/data3/shijing/cw-mix.wav'
+wav_mix_pre, rate_pre = sf.read(aim_wav)  # wav_mix 是采样值，rate 是采样频率
+config.MAX_LEN=wav_mix_pre.shape[0]
 
 
 def split_forTrainDevTest(given_list, train_or_test, phase):
@@ -229,7 +233,9 @@ def prepare_data(mode, train_or_test, min=None, max=None, add_noise_ratio=0.5):
                 multi_spk_fea_list.append(multi_fea_dict_this_sample)  # 把这个sample的dict传进去
                 multi_spk_wav_list.append(multi_wav_dict_this_sample)  # 把这个sample的dict传进去
 
+                wav_mix, rate = sf.read(aim_wav)  # wav_mix 是采样值，rate 是采样频率
                 # 混合语音的图谱
+                print('Len fo aim:',wav_mix.shape[0])
                 assert wav_mix.shape[0] == config.MAX_LEN
                 # TODO: 考虑下 是不是应该之在mix上做波形归一化
                 wav_mix = process_signal(wav_mix, rate, config.MAX_LEN, normalize=False)
