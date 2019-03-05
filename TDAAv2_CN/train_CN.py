@@ -12,6 +12,8 @@ import data.dict as dict
 from optims import Optim
 import lr_scheduler as L
 from predata_CN import prepare_data
+# from predata_CN_aim import prepare_data
+from predata_fromList_123 import prepare_data as prepare_data_aim
 import bss_test
 
 import os
@@ -30,8 +32,9 @@ parser.add_argument('-config', default='config_CN.yaml', type=str,
 # parser.add_argument('-gpus', default=range(8), nargs='+', type=int,
 parser.add_argument('-gpus', default=[2], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
-parser.add_argument('-restore', default='sscn_v01a_wfm.pt', type=str,
+#parser.add_argument('-restore', default='sscn_v01a_wfm.pt', type=str,
 # parser.add_argument('-restore', default='sscn_v01a_264001.pt', type=str,
+parser.add_argument('-restore', default='sscn_v01b_best_204001.pt', type=str,
 # parser.add_argument('-restore', default=None, type=str,
                    help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
@@ -89,6 +92,8 @@ batch_total=global_para['total_batch_num']
 
 config.speech_fre=speech_fre
 mix_speech_len=total_frames
+mix_speech_len=626
+mix_speech_len=1251
 config.mix_speech_len=total_frames
 del spk_global_gen
 num_labels=len(spk_all_list)
@@ -308,9 +313,9 @@ def train(epoch):
             if (updates % config.eval_interval) in [0,1,2,3,4,5,6,7,8,9,10] :
                 predicted_maps=multi_mask*x_input_map_multi
                 # predicted_maps=Variable(feas_tgt)
-                utils.bss_eval(config, predicted_maps,train_data['multi_spk_fea_list'], raw_tgt, train_data, dst='batch_outputwaddd')
+                utils.bss_eval(config, predicted_maps,train_data['multi_spk_fea_list'], raw_tgt, train_data, dst='batch_outputjaa')
                 del predicted_maps,multi_mask,x_input_map_multi
-                sdr_aver_batch=bss_test.cal('batch_outputwaddd/')
+                sdr_aver_batch=bss_test.cal('batch_outputjaa/')
                 lera.log({'SDR sample':sdr_aver_batch})
                 SDR_SUM = np.append(SDR_SUM, sdr_aver_batch)
                 print 'SDR_aver_now:',SDR_SUM.mean()
@@ -365,9 +370,9 @@ def eval(epoch):
     model.eval()
     reference, candidate, source, alignments = [], [], [], []
     e=epoch
-    test_or_valid='valid'
+    test_or_valid='test'
     print 'Test or valid:',test_or_valid
-    eval_data_gen=prepare_data('once',test_or_valid,config.MIN_MIX,config.MAX_MIX)
+    eval_data_gen=prepare_data_aim('once',test_or_valid,config.MIN_MIX,config.MAX_MIX)
     # for raw_src, src, src_len, raw_tgt, tgt, tgt_len in validloader:
     SDR_SUM=np.array([])
     batch_idx=0
@@ -433,24 +438,25 @@ def eval(epoch):
         x_input_map_multi=torch.unsqueeze(src,1).expand(siz[0],topk_max,siz[1],siz[2])
         if config.WFM:
             feas_tgt=x_input_map_multi.data*WFM_mask
-        if 1 and len(opt.gpus) > 1:
-            ss_loss = model.module.separation_loss(x_input_map_multi, predicted_masks, feas_tgt,Var)
-        else:
-            ss_loss = model.separation_loss(x_input_map_multi, predicted_masks, feas_tgt)
-        print 'loss for ss,this batch:',ss_loss.data[0]
-        lera.log({
-            'ss_loss_'+test_or_valid: ss_loss.data[0],
-        })
 
-        del ss_loss,hiddens
+        if test_or_valid=='valid':
+            if 1 and len(opt.gpus) > 1:
+                ss_loss = model.module.separation_loss(x_input_map_multi, predicted_masks, feas_tgt,Var)
+            else:
+                ss_loss = model.separation_loss(x_input_map_multi, predicted_masks, feas_tgt)
+            print 'loss for ss,this batch:',ss_loss.data[0]
+            lera.log({
+                'ss_loss_'+test_or_valid: ss_loss.data[0],
+            })
+            del ss_loss,hiddens
 
         # '''''
         if batch_idx<=(500/config.batch_size): #only the former batches counts the SDR
             predicted_maps=predicted_masks*x_input_map_multi
             # predicted_maps=Variable(feas_tgt)
-            utils.bss_eval2(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_outputwaddd')
+            utils.bss_eval2(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_outputjaa')
             del predicted_maps,predicted_masks,x_input_map_multi
-            SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_outputwaddd/'))
+            SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_outputjaa/'))
             print 'SDR_aver_now:',SDR_SUM.mean()
             lera.log({'SDR sample':SDR_SUM.mean()})
             # raw_input('Press any key to continue......')
