@@ -133,6 +133,7 @@ def bss_eval(config, predict_multi_map,y_multi_map,y_map_gtruth,train_data,dst='
         for idx,one_cha in enumerate(each_trueVector):
             this_spk=one_cha
             y_pre_map=each_pre[idx].data.cpu().numpy()
+            # y_pre_map=each_y[one_cha] # this is true feats
             _pred_spec = y_pre_map * np.exp(1j * phase_mix)
             wav_pre=librosa.core.spectrum.istft(np.transpose(_pred_spec), config.FRAME_SHIFT)
             min_len =  len(wav_pre)

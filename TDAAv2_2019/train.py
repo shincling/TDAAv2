@@ -25,38 +25,12 @@ import code
 #config
 parser = argparse.ArgumentParser(description='train.py')
 
-parser.add_argument('-config', default='config.yaml', type=str,
+parser.add_argument('-config', default='config_2019.yaml', type=str,
                     help="config file")
-# parser.add_argument('-config', default='config_mix.yaml', type=str,
-#                     help="config file")
-# parser.add_argument('-restore', default='best_schimit_mix_v1.pt', type=str,
-#                     help="restore checkpoint")
-
-# parser.add_argument('-config', default='config_WFM600.yaml', type=str,
-#                     help="config file")
-# parser.add_argument('-restore', default='best_f1_WFM_v2.pt', type=str,
-#                     help="restore checkpoint")
-parser.add_argument('-gpus', default=[2], nargs='+', type=int,
+parser.add_argument('-gpus', default=[2,3], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
-# parser.add_argument('-restore', default='best_mlmse_v0.pt', type=str,
-#                      help="restore checkpoint")
-# parser.add_argument('-restore', default='best_f1_v4.pt', type=str,
-#                     help="restore checkpoint")
-# parser.add_argument('-restore', default='best_f1_hidden_v8.pt', type=str,
-#                     help="restore checkpoint")
-# parser.add_argument('-restore', default='best_f1_ct_v1.pt', type=str,
-#                     help="restore checkpoint")
-#parser.add_argument('-restore', default='best_f1_globalemb12.pt', type=str,
-parser.add_argument('-restore', default='sscn_v01b_best_.pt', type=str,
-                    help="restore checkpoint")
-# parser.add_argument('-restore', default='best_schimit_v10.pt', type=str,
-#                     help="restore checkpoint")
-# parser.add_argument('-restore', default='best_f1_sch23v2.pt', type=str,
-#                     help="restore checkpoint")
-# parser.add_argument('-restore', default='best_dis_v0.pt', type=str,
-#                     help="restore checkpoint")
-#parser.add_argument('-restore', default=None, type=str,
-#                    help="restore checkpoint")
+parser.add_argument('-restore', default=None, type=str,
+                   help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
                     help="Random seed")
 parser.add_argument('-model', default='seq2seq', type=str,
@@ -65,7 +39,7 @@ parser.add_argument('-score', default='', type=str,
                     help="score_fn")
 parser.add_argument('-pretrain', default=False, type=bool,
                     help="load pretrain embedding")
-parser.add_argument('-notrain', default=1, type=bool,
+parser.add_argument('-notrain', default=0, type=bool,
                     help="train or not")
 parser.add_argument('-limit', default=0, type=int,
                     help="data limit")
@@ -202,7 +176,7 @@ with open(opt.label_dict_file, 'r') as f:
 
 # train
 lera.log_hyperparams({
-  'title': unicode('MLMSE train with hidden Relu+Order') ,
+  'title': unicode('TDAAv2_2019') ,
   'updates':updates,
   'batch_size': config.batch_size,
   'WFM':config.WFM,
@@ -255,12 +229,22 @@ def train(epoch):
         tgt = Variable(torch.from_numpy(np.array([[0]+[dict_spk2idx[spk] for spk in spks]+[dict_spk2idx['<EOS>']] for spks in raw_tgt],dtype=np.int))).transpose(0,1) #转换成数字，然后前后加开始和结束符号。
         src_len = Variable(torch.LongTensor(config.batch_size).zero_()+mix_speech_len).unsqueeze(0)
         tgt_len = Variable(torch.LongTensor(config.batch_size).zero_()+len(train_data['multi_spk_fea_list'][0])).unsqueeze(0)
+
+        if config.WFM:
+            tmp_size=feas_tgt.size()
+            assert len(tmp_size)==4
+            feas_tgt_square=feas_tgt*feas_tgt
+            feas_tgt_square_sum=torch.sum(feas_tgt_square,dim=1,keepdim=True).expand(tmp_size)
+            WFM_mask=feas_tgt_square/(feas_tgt_square_sum+1e-10)
+
         if use_cuda:
             src = src.cuda().transpose(0,1)
             tgt = tgt.cuda()
             src_len = src_len.cuda()
             tgt_len = tgt_len.cuda()
             feas_tgt = feas_tgt.cuda()
+            if config.WFM:
+                WFM_mask=WFM_mask.cuda()
 
         model.zero_grad()
         # optim.optimizer.zero_grad()
@@ -281,6 +265,8 @@ def train(epoch):
         x_input_map_multi=torch.unsqueeze(src,1).expand(siz[0],topk,siz[1],siz[2])
         multi_mask=multi_mask.transpose(0,1)
 
+        if config.WFM:
+            feas_tgt=x_input_map_multi.data*WFM_mask
         if 1 and len(opt.gpus) > 1:
             if config.MLMSE:
                 Var = model.module.update_var(x_input_map_multi, multi_mask, feas_tgt)
@@ -373,10 +359,9 @@ def eval(epoch):
         if config.WFM:
             tmp_size=feas_tgt.size()
             assert len(tmp_size)==4
-            feas_tgt_sum=torch.sum(feas_tgt,dim=1,keepdim=True)
-            feas_tgt_sum_square=(feas_tgt_sum*feas_tgt_sum).expand(tmp_size)
             feas_tgt_square=feas_tgt*feas_tgt
-            WFM_mask=feas_tgt_square/feas_tgt_sum_square
+            feas_tgt_square_sum=torch.sum(feas_tgt_square,dim=1,keepdim=True).expand(tmp_size)
+            WFM_mask=feas_tgt_square/(feas_tgt_square_sum+1e-10)
 
         if use_cuda:
             src = src.cuda().transpose(0,1)

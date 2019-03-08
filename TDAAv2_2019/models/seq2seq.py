@@ -41,7 +41,7 @@ class seq2seq(nn.Module):
         else:
             return models.cross_entropy_loss(hidden_outputs, self.decoder, targets, self.criterion, self.config)
 
-    def separation_loss(self, x_input_map_multi,masks,y_multi_map,Var):
+    def separation_loss(self, x_input_map_multi,masks,y_multi_map,Var=None):
         if not self.config.MLMSE:
             return models.ss_loss(self.config, x_input_map_multi,masks,y_multi_map,self.loss_for_ss)
         else:
