@@ -27,9 +27,10 @@ parser = argparse.ArgumentParser(description='train.py')
 
 parser.add_argument('-config', default='config_2019.yaml', type=str,
                     help="config file")
-parser.add_argument('-gpus', default=[2,3], nargs='+', type=int,
+parser.add_argument('-gpus', default=range(8), nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
-parser.add_argument('-restore', default=None, type=str,
+parser.add_argument('-restore', default='TDAA2019_15001.pt', type=str,
+#parser.add_argument('-restore', default=None, type=str,
                    help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
                     help="Random seed")
@@ -39,7 +40,7 @@ parser.add_argument('-score', default='', type=str,
                     help="score_fn")
 parser.add_argument('-pretrain', default=False, type=bool,
                     help="load pretrain embedding")
-parser.add_argument('-notrain', default=0, type=bool,
+parser.add_argument('-notrain', default=1, type=bool,
                     help="train or not")
 parser.add_argument('-limit', default=0, type=int,
                     help="data limit")
@@ -245,98 +246,104 @@ def train(epoch):
             feas_tgt = feas_tgt.cuda()
             if config.WFM:
                 WFM_mask=WFM_mask.cuda()
+        try:
+            model.zero_grad()
+            # optim.optimizer.zero_grad()
+            outputs, targets, multi_mask = model(src, src_len, tgt, tgt_len) #这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
+            print 'mask size:',multi_mask.size()
 
-        model.zero_grad()
-        # optim.optimizer.zero_grad()
-        outputs, targets, multi_mask = model(src, src_len, tgt, tgt_len) #这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
-        print 'mask size:',multi_mask.size()
-
-        if 1 and len(opt.gpus) > 1:
-            sgm_loss, num_total, num_correct = model.module.compute_loss(outputs, targets, opt.memory)
-        else:
-            sgm_loss, num_total, num_correct = model.compute_loss(outputs, targets, opt.memory)
-        print 'loss for SGM,this batch:',sgm_loss.data[0]/num_total
-
-        src=src.transpose(0,1)
-        # expand the raw mixed-features to topk channel.
-        siz=src.size()
-        assert len(siz)==3
-        topk=feas_tgt.size()[1]
-        x_input_map_multi=torch.unsqueeze(src,1).expand(siz[0],topk,siz[1],siz[2])
-        multi_mask=multi_mask.transpose(0,1)
-
-        if config.WFM:
-            feas_tgt=x_input_map_multi.data*WFM_mask
-        if 1 and len(opt.gpus) > 1:
-            if config.MLMSE:
-                Var = model.module.update_var(x_input_map_multi, multi_mask, feas_tgt)
-                lera.log_image(u'Var weight',Var.data.cpu().numpy().reshape(config.speech_fre,config.speech_fre,1).repeat(3,2),clip=(-1,1))
-                ss_loss = model.module.separation_loss(x_input_map_multi, multi_mask, feas_tgt, Var)
+            if 1 and len(opt.gpus) > 1:
+                sgm_loss, num_total, num_correct = model.module.compute_loss(outputs, targets, opt.memory)
             else:
-                ss_loss = model.module.separation_loss(x_input_map_multi, multi_mask, feas_tgt)
-        else:
-            ss_loss = model.separation_loss(x_input_map_multi, multi_mask, feas_tgt)
+                sgm_loss, num_total, num_correct = model.compute_loss(outputs, targets, opt.memory)
+            print 'loss for SGM,this batch:',sgm_loss.data[0]/num_total
 
-        loss=sgm_loss+ss_loss
-        # dis_loss model
-        if config.is_dis:
-            dis_loss=models.loss.dis_loss(config,topk,model_dis,x_input_map_multi,multi_mask,feas_tgt,func_dis)
-            loss = loss+dis_loss
-            # print 'dis_para',model_dis.parameters().next()[0]
-            # print 'ss_para',model.parameters().next()[0]
+            src=src.transpose(0,1)
+            # expand the raw mixed-features to topk channel.
+            siz=src.size()
+            assert len(siz)==3
+            topk=feas_tgt.size()[1]
+            x_input_map_multi=torch.unsqueeze(src,1).expand(siz[0],topk,siz[1],siz[2])
+            multi_mask=multi_mask.transpose(0,1)
 
-        loss.backward()
-        # print 'totallllllllllll loss:',loss
-        total_loss_sgm += sgm_loss.data[0]
-        total_loss_ss += ss_loss.data[0]
-        lera.log({
-            'sgm_loss': sgm_loss.data[0],
-            'ss_loss': ss_loss.data[0],
-        })
-        total_loss += loss.data[0]
-        report_total += num_total
-        optim.step()
-        if config.is_dis:
-            optim_dis.step()
+            if config.WFM:
+                feas_tgt=x_input_map_multi.data*WFM_mask
+            if 1 and len(opt.gpus) > 1:
+                if config.MLMSE:
+                    Var = model.module.update_var(x_input_map_multi, multi_mask, feas_tgt)
+                    lera.log_image(u'Var weight',Var.data.cpu().numpy().reshape(config.speech_fre,config.speech_fre,1).repeat(3,2),clip=(-1,1))
+                    ss_loss = model.module.separation_loss(x_input_map_multi, multi_mask, feas_tgt, Var)
+                else:
+                    ss_loss = model.module.separation_loss(x_input_map_multi, multi_mask, feas_tgt)
+            else:
+                ss_loss = model.separation_loss(x_input_map_multi, multi_mask, feas_tgt)
 
-        updates += 1
-        if updates%30==0:
-            logging("time: %6.3f, epoch: %3d, updates: %8d, train loss this batch: %6.3f,sgm loss: %6.6f,ss loss: %6.6f\n"
-                    % (time.time()-start_time, epoch, updates, loss / num_total, total_loss_sgm/30.0, total_loss_ss/30.0))
-            total_loss_sgm, total_loss_ss = 0, 0
+            loss=sgm_loss+5*ss_loss
+            # dis_loss model
+            if config.is_dis:
+                dis_loss=models.loss.dis_loss(config,topk,model_dis,x_input_map_multi,multi_mask,feas_tgt,func_dis)
+                loss = loss+dis_loss
+                # print 'dis_para',model_dis.parameters().next()[0]
+                # print 'ss_para',model.parameters().next()[0]
 
-        # continue
+            loss.backward()
+            # print 'totallllllllllll loss:',loss
+            total_loss_sgm += sgm_loss.data[0]
+            total_loss_ss += ss_loss.data[0]
+            lera.log({
+                'sgm_loss': sgm_loss.data[0],
+                'ss_loss': ss_loss.data[0],
+            })
+            total_loss += loss.data[0]
+            report_total += num_total
+            optim.step()
+            if config.is_dis:
+                optim_dis.step()
 
-        if 0 or updates % config.eval_interval == 0 and epoch>1 :
-            logging("time: %6.3f, epoch: %3d, updates: %8d, train loss: %6.5f\n"
-                    % (time.time()-start_time, epoch, updates, total_loss / report_total))
-            print('evaluating after %d updates...\r' % updates)
-            score = eval(epoch)
-            for metric in config.metric:
-                scores[metric].append(score[metric])
-                if metric == 'micro_f1' and score[metric] >= max(scores[metric]):  
-                    save_model(log_path+'best_'+metric+'_checkpoint.pt')
-                if metric == 'hamming_loss' and score[metric] <= min(scores[metric]):
-                    save_model(log_path+'best_'+metric+'_checkpoint.pt')
+            updates += 1
+            if updates%30==0:
+                logging("time: %6.3f, epoch: %3d, updates: %8d, train loss this batch: %6.3f,sgm loss: %6.6f,ss loss: %6.6f\n"
+                        % (time.time()-start_time, epoch, updates, loss / num_total, total_loss_sgm/30.0, total_loss_ss/30.0))
+                total_loss_sgm, total_loss_ss = 0, 0
 
-            model.train()
-            total_loss = 0
-            start_time = 0
-            report_total = 0
+            # continue
+
+            if 0 or updates % config.eval_interval == 0 and epoch>1 :
+                logging("time: %6.3f, epoch: %3d, updates: %8d, train loss: %6.5f\n"
+                        % (time.time()-start_time, epoch, updates, total_loss / report_total))
+                print('evaluating after %d updates...\r' % updates)
+                score = eval(epoch)
+                for metric in config.metric:
+                    scores[metric].append(score[metric])
+                    if metric == 'micro_f1' and score[metric] >= max(scores[metric]):
+                        save_model(log_path+'best_'+metric+'_checkpoint.pt')
+                    if metric == 'hamming_loss' and score[metric] <= min(scores[metric]):
+                        save_model(log_path+'best_'+metric+'_checkpoint.pt')
+
+                model.train()
+                total_loss = 0
+                start_time = 0
+                report_total = 0
+        except RuntimeError,info:
+            print '**************Error occurs here************:', info
+            continue
 
         if updates % config.save_interval == 1:
-            save_model(log_path+'checkpoint_v2_withdis{}.pt'.format(config.is_dis))
+            save_model(log_path+'TDAA2019_{}.pt'.format(updates))
 
+    if epoch>=5 and updates%config.eval_interval==0:
+        eval(epoch)
 
 def eval(epoch):
     model.eval()
     reference, candidate, source, alignments = [], [], [], []
     e=epoch
-    test_or_valid='valid'
+    test_or_valid='test'
     print 'Test or valid:',test_or_valid
     eval_data_gen=prepare_data('once',test_or_valid,config.MIN_MIX,config.MAX_MIX)
     # for raw_src, src, src_len, raw_tgt, tgt, tgt_len in validloader:
     SDR_SUM=np.array([])
+    SDRi_SUM=np.array([])
     batch_idx=0
     global best_SDR,Var
     while True:
@@ -379,7 +386,7 @@ def eval(epoch):
                 samples, alignment, hiddens, predicted_masks = model.beam_sample(src, src_len, dict_spk2idx, tgt, beam_size=config.beam_size)
                 # samples, alignment, hiddens, predicted_masks = model.beam_sample(src, src_len, dict_spk2idx, tgt, beam_size=config.beam_size)
         except Exception,info:
-            print '**************Error occurs here************:', info
+            print '**************Error eval occurs here************:', info
             continue
 
         if config.top1:
@@ -395,7 +402,7 @@ def eval(epoch):
         if config.WFM:
             feas_tgt=x_input_map_multi.data*WFM_mask
         if 1 and len(opt.gpus) > 1:
-            ss_loss = model.module.separation_loss(x_input_map_multi, predicted_masks, feas_tgt,Var)
+            ss_loss = model.module.separation_loss(x_input_map_multi, predicted_masks, feas_tgt,None)
         else:
             ss_loss = model.separation_loss(x_input_map_multi, predicted_masks, feas_tgt,None)
         print 'loss for ss,this batch:',ss_loss.data[0]
@@ -409,12 +416,16 @@ def eval(epoch):
         if batch_idx<=(500/config.batch_size): #only the former batches counts the SDR
             predicted_maps=predicted_masks*x_input_map_multi
             # predicted_maps=Variable(feas_tgt)
-            utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_outputwaddd')
+            utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_output23jo')
             del predicted_maps,predicted_masks,x_input_map_multi
-            SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_outputwaddd/'))
+            SDR,SDRi=bss_test.cal('batch_output23jo/')
+            # SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_output23jo/'))
+            SDR_SUM = np.append(SDR_SUM, SDR)
+            SDRi_SUM = np.append(SDRi_SUM, SDRi)
             print 'SDR_aver_now:',SDR_SUM.mean()
+            print 'SDRi_aver_now:',SDRi_SUM.mean()
             lera.log({'SDR sample':SDR_SUM.mean()})
-            raw_input('Press any key to continue......')
+            lera.log({'SDRi sample':SDRi_SUM.mean()})
         elif batch_idx==(500/config.batch_size)+1 and SDR_SUM.mean()>best_SDR: #only record the best SDR once.
             print 'Best SDR from {}---->{}'.format(best_SDR,SDR_SUM.mean())
             best_SDR=SDR_SUM.mean()
