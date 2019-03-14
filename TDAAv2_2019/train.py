@@ -21,16 +21,17 @@ import json
 import collections
 import lera
 import code
-
 #config
 parser = argparse.ArgumentParser(description='train.py')
 
 parser.add_argument('-config', default='config_2019.yaml', type=str,
                     help="config file")
-parser.add_argument('-gpus', default=range(8), nargs='+', type=int,
+# parser.add_argument('-gpus', default=range(8), nargs='+', type=int,
+parser.add_argument('-gpus', default=[7], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
-parser.add_argument('-restore', default='TDAA2019_15001.pt', type=str,
-#parser.add_argument('-restore', default=None, type=str,
+# parser.add_argument('-restore', default='TDAA2019_15001.pt', type=str,
+parser.add_argument('-restore', default='best_f1_hidden_v8.pt', type=str,
+# parser.add_argument('-restore', default=None, type=str,
                    help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
                     help="Random seed")
@@ -187,6 +188,7 @@ lera.log_hyperparams({
   # 'spk_emb_size':config.SPK_EMB_SIZE, #注意这个东西需要和上面的spk_emb（如果是global_emb的话）,否认则就跟decoder的hidden_size对应
   # 'hidden_mix':config.hidden_mix,#这个模式是不采用global emb的时候，把hidden和下一步的embeding一起cat起来作为ss的输入进去。
   'schmidt': config.schmidt,
+  'unit_norm': config.unit_norm,
   'log path': unicode(log_path),
   'selfTune':config.is_SelfTune,
   'is_dis':config.is_dis,
@@ -258,6 +260,14 @@ def train(epoch):
                 sgm_loss, num_total, num_correct = model.compute_loss(outputs, targets, opt.memory)
             print 'loss for SGM,this batch:',sgm_loss.data[0]/num_total
 
+            if config.unit_norm: #outputs---[len+1,bs,2*d]
+                assert not config.global_emb
+                unit_dis=(outputs[0]*outputs[1]).sum(1)
+                print 'unit_dis this batch:',unit_dis.data.cpu().numpy()
+                unit_dis=torch.masked_select(unit_dis,unit_dis>config.unit_norm)
+                if len(unit_dis)>0:
+                    unit_dis=unit_dis.mean()
+
             src=src.transpose(0,1)
             # expand the raw mixed-features to topk channel.
             siz=src.size()
@@ -279,6 +289,12 @@ def train(epoch):
                 ss_loss = model.separation_loss(x_input_map_multi, multi_mask, feas_tgt)
 
             loss=sgm_loss+5*ss_loss
+            if config.unit_norm and len(unit_dis):
+                print 'unit_dis masked mean:',unit_dis.data[0]
+                lera.log({
+                    'unit_dis': unit_dis.data[0],
+                })
+                loss = loss + unit_dis
             # dis_loss model
             if config.is_dis:
                 dis_loss=models.loss.dis_loss(config,topk,model_dis,x_input_map_multi,multi_mask,feas_tgt,func_dis)

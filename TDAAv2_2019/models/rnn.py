@@ -131,9 +131,11 @@ class rnn_decoder(nn.Module):
             for emb in embs.split(1): # 对于每个step的target词语, 这个循环应该是针对训练集当中的n的（目标标签数目）,就是把第一个排列成一个tuple(也就是这个batch里label最多的那个的label数目）
                 output, state = self.rnn(emb.squeeze(0), state)
                 output, attn_weights = self.attention(output, contexts)
+                if self.config.unit_norm:
+                    output=torch.nn.functional.normalize(output,2)
                 if self.config.schmidt:
                     output = models.schmidt(output,outputs)
-                output = self.dropout(output)
+                # output = self.dropout(output)
                 if self.config.ct_recu:
                     contexts= (1-(attn_weights>0.003).float()).unsqueeze(-1)*contexts
                     # contexts= (1-attn_weights).unsqueeze(-1)*contexts
@@ -237,6 +239,8 @@ class rnn_decoder(nn.Module):
             emb = self.embedding(input)
         output, state = self.rnn(emb, state)
         hidden, attn_weigths = self.attention(output, contexts)
+        if self.config.unit_norm:
+            hidden=torch.nn.functional.normalize(hidden,2)
         if self.config.schmidt:
             hidden = models.schmidt(hidden,tmp_hiddens)
         output = self.compute_score(hidden)
