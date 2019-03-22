@@ -26,11 +26,12 @@ parser = argparse.ArgumentParser(description='train.py')
 
 parser.add_argument('-config', default='config_2019.yaml', type=str,
                     help="config file")
-# parser.add_argument('-gpus', default=range(8), nargs='+', type=int,
-parser.add_argument('-gpus', default=[7], nargs='+', type=int,
+parser.add_argument('-gpus', default=range(8), nargs='+', type=int,
+# parser.add_argument('-gpus', default=[7], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
 # parser.add_argument('-restore', default='TDAA2019_15001.pt', type=str,
-parser.add_argument('-restore', default='best_f1_hidden_v8.pt', type=str,
+#parser.add_argument('-restore', default='best_f1_hidden_v8.pt', type=str,
+parser.add_argument('-restore', default='reID_v0.pt', type=str,
 # parser.add_argument('-restore', default=None, type=str,
                    help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
@@ -41,7 +42,7 @@ parser.add_argument('-score', default='', type=str,
                     help="score_fn")
 parser.add_argument('-pretrain', default=False, type=bool,
                     help="load pretrain embedding")
-parser.add_argument('-notrain', default=1, type=bool,
+parser.add_argument('-notrain', default=0, type=bool,
                     help="train or not")
 parser.add_argument('-limit', default=0, type=int,
                     help="data limit")
@@ -110,7 +111,7 @@ if len(opt.gpus) > 1:
     model = nn.DataParallel(model, device_ids=opt.gpus, dim=1)
 
 # optimizer
-if 0 and opt.restore:
+if 1 and opt.restore:
     optim = checkpoints['optim']
 else:
     optim = Optim(config.optim, config.learning_rate, config.max_grad_norm,
@@ -189,6 +190,7 @@ lera.log_hyperparams({
   # 'hidden_mix':config.hidden_mix,#这个模式是不采用global emb的时候，把hidden和下一步的embeding一起cat起来作为ss的输入进去。
   'schmidt': config.schmidt,
   'unit_norm': config.unit_norm,
+  'reID': config.reID,
   'log path': unicode(log_path),
   'selfTune':config.is_SelfTune,
   'is_dis':config.is_dis,
@@ -295,6 +297,27 @@ def train(epoch):
                     'unit_dis': unit_dis.data[0],
                 })
                 loss = loss + unit_dis
+            if config.reID:
+                predict_multi_map=multi_mask*x_input_map_multi
+                predict_multi_map=predict_multi_map.view(-1,mix_speech_len,speech_fre).transpose(0,1)
+                tgt_reID=[]
+                for spks in raw_tgt:
+                    for spk in spks:
+                        one_spk=[dict_spk2idx['<BOS>']]+[dict_spk2idx[spk]]+[dict_spk2idx['<EOS>']]
+                        tgt_reID.append(one_spk)
+                tgt_reID=Variable(torch.from_numpy(np.array(tgt_reID,dtype=np.int))).transpose(0,1).cuda()
+                src_len_reID = Variable(torch.LongTensor(topk*config.batch_size).zero_()+mix_speech_len).unsqueeze(0).cuda()
+                tgt_len_reID = Variable(torch.LongTensor(topk*config.batch_size).zero_()+1).unsqueeze(0).cuda()
+                outputs_reID, targets_reID, _ = model(predict_multi_map, src_len_reID, tgt_reID, tgt_len_reID) #这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
+                del _
+                if 1 and len(opt.gpus) > 1:
+                    sgm_loss_reID,num_total_reID,xx_  = model.module.compute_loss(outputs_reID, targets_reID, opt.memory)
+                else:
+                    sgm_loss_reID,num_total_reID,xx_  = model.compute_loss(outputs_reID, targets_reID, opt.memory)
+                print 'loss for SGM-reID mthis batch:',sgm_loss_reID.data[0]/num_total_reID
+                loss = loss+sgm_loss_reID
+
+
             # dis_loss model
             if config.is_dis:
                 dis_loss=models.loss.dis_loss(config,topk,model_dis,x_input_map_multi,multi_mask,feas_tgt,func_dis)
@@ -310,6 +333,10 @@ def train(epoch):
                 'sgm_loss': sgm_loss.data[0],
                 'ss_loss': ss_loss.data[0],
             })
+            if config.reID:
+                lera.log({
+                    'reID_loss': sgm_loss_reID.data[0],
+                })
             total_loss += loss.data[0]
             report_total += num_total
             optim.step()
@@ -347,7 +374,7 @@ def train(epoch):
         if updates % config.save_interval == 1:
             save_model(log_path+'TDAA2019_{}.pt'.format(updates))
 
-    if epoch>=5 and updates%config.eval_interval==0:
+    if epoch>=0 and updates%config.eval_interval==0:
         eval(epoch)
 
 def eval(epoch):
@@ -403,6 +430,9 @@ def eval(epoch):
                 # samples, alignment, hiddens, predicted_masks = model.beam_sample(src, src_len, dict_spk2idx, tgt, beam_size=config.beam_size)
         except Exception,info:
             print '**************Error eval occurs here************:', info
+            continue
+        if len(samples[0])!=3:
+            print 'Wrong num of mixtures, passed.'
             continue
 
         if config.top1:

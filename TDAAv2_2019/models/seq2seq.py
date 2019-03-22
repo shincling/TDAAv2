@@ -221,7 +221,7 @@ class seq2seq(nn.Module):
             allAttn.append(attn[0])
             allHiddens.append(hiddens[0])
             allEmbs.append(embs[0])
-        print allHyps
+        print '\nPredicted:\n',allHyps
 
         if not self.config.global_emb:
             outputs=Variable(torch.stack(allHiddens,0).transpose(0,1)) # to [decLen, bs, dim]

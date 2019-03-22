@@ -1,7 +1,7 @@
 data:  './data/data/save_data'
 log:  './data/data/log/'
 epoch:  200
-batch_size: 5
+batch_size: 96
 param_init:  0.1
 optim:  'adam'
 learning_rate:  0.001
@@ -17,8 +17,8 @@ decoder_hidden_size:  512
 num_layers:  2
 dropout:  0.5
 max_tgt_len:  25
-eval_interval: 400
-save_interval:  3000
+eval_interval: 500
+save_interval:  500
 max_generator_batches:  32
 metric:  ['hamming_loss', 'micro_f1']
 shared_vocab:  0
@@ -37,6 +37,7 @@ hidden_mix: 0 #这个模式是不采用global emb的时候，把hidden和下一�
 schmidt: 0
 unit_norm: 0 #hidden use the unit circle, >0.9 will add the loss.
 #unit_norm: 0.9 #hidden use the unit circle, >0.9 will add the loss.
+reID: 1
 is_SelfTune :  0
 is_dis: 0
 speech_cnn_net: 0 #是否采用CNN的结构来抽取
