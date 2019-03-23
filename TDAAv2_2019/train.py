@@ -344,7 +344,7 @@ def train(epoch):
             if config.reID:
                 lera.log({
                     'reID_sgm_loss': sgm_loss_reID.data[0],
-                    'reID_ss_loss': sgm_loss_reID.data[0],
+                    'reID_ss_loss': ss_loss_reID.data[0],
 
                 })
             total_loss += loss.data[0]
