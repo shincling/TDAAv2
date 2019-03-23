@@ -1,10 +1,10 @@
 data:  './data/data/save_data'
 log:  './data/data/log/'
 epoch:  200
-batch_size: 96
+batch_size: 3
 param_init:  0.1
 optim:  'adam'
-learning_rate:  0.001
+learning_rate:  0.0001
 max_grad_norm:  10
 learning_rate_decay:  0.5
 mask:  1

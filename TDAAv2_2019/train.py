@@ -26,8 +26,8 @@ parser = argparse.ArgumentParser(description='train.py')
 
 parser.add_argument('-config', default='config_2019.yaml', type=str,
                     help="config file")
-parser.add_argument('-gpus', default=range(8), nargs='+', type=int,
-# parser.add_argument('-gpus', default=[7], nargs='+', type=int,
+# parser.add_argument('-gpus', default=range(8), nargs='+', type=int,
+parser.add_argument('-gpus', default=[7], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
 # parser.add_argument('-restore', default='TDAA2019_15001.pt', type=str,
 #parser.add_argument('-restore', default='best_f1_hidden_v8.pt', type=str,
@@ -298,6 +298,7 @@ def train(epoch):
                 })
                 loss = loss + unit_dis
             if config.reID:
+                print '#'*30+'ReID part '+'#'*30
                 predict_multi_map=multi_mask*x_input_map_multi
                 predict_multi_map=predict_multi_map.view(-1,mix_speech_len,speech_fre).transpose(0,1)
                 tgt_reID=[]
@@ -308,14 +309,21 @@ def train(epoch):
                 tgt_reID=Variable(torch.from_numpy(np.array(tgt_reID,dtype=np.int))).transpose(0,1).cuda()
                 src_len_reID = Variable(torch.LongTensor(topk*config.batch_size).zero_()+mix_speech_len).unsqueeze(0).cuda()
                 tgt_len_reID = Variable(torch.LongTensor(topk*config.batch_size).zero_()+1).unsqueeze(0).cuda()
-                outputs_reID, targets_reID, _ = model(predict_multi_map, src_len_reID, tgt_reID, tgt_len_reID) #这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
-                del _
+                outputs_reID, targets_reID, multi_mask_reID = model(predict_multi_map, src_len_reID, tgt_reID, tgt_len_reID) #这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
                 if 1 and len(opt.gpus) > 1:
-                    sgm_loss_reID,num_total_reID,xx_  = model.module.compute_loss(outputs_reID, targets_reID, opt.memory)
+                    sgm_loss_reID,num_total_reID,_xx= model.module.compute_loss(outputs_reID, targets_reID, opt.memory)
                 else:
-                    sgm_loss_reID,num_total_reID,xx_  = model.compute_loss(outputs_reID, targets_reID, opt.memory)
+                    sgm_loss_reID,num_total_reID,_xx= model.compute_loss(outputs_reID, targets_reID, opt.memory)
                 print 'loss for SGM-reID mthis batch:',sgm_loss_reID.data[0]/num_total_reID
                 loss = loss+sgm_loss_reID
+                if config.WFM:
+                    feas_tgt=x_input_map_multi.data*WFM_mask
+                if 1 and len(opt.gpus) > 1:
+                    ss_loss_reID = model.module.separation_loss(predict_multi_map.transpose(0,1).unsqueeze(1), multi_mask_reID.transpose(0,1), feas_tgt.view(-1,1,mix_speech_len,speech_fre))
+                else:
+                    ss_loss_reID = model.separation_loss(predict_multi_map.transpose(0,1).unsqueeze(1), multi_mask_reID.transpose(0,1), feas_tgt.view(-1,1,mix_speech_len,speech_fre))
+                loss = loss+ss_loss_reID
+                print '#'*30+'ReID part '+'#'*30
 
 
             # dis_loss model
@@ -335,7 +343,9 @@ def train(epoch):
             })
             if config.reID:
                 lera.log({
-                    'reID_loss': sgm_loss_reID.data[0],
+                    'reID_sgm_loss': sgm_loss_reID.data[0],
+                    'reID_ss_loss': sgm_loss_reID.data[0],
+
                 })
             total_loss += loss.data[0]
             report_total += num_total
