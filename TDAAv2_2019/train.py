@@ -31,7 +31,8 @@ parser.add_argument('-gpus', default=[7], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
 # parser.add_argument('-restore', default='TDAA2019_15001.pt', type=str,
 #parser.add_argument('-restore', default='best_f1_hidden_v8.pt', type=str,
-parser.add_argument('-restore', default='reID_v0.pt', type=str,
+# parser.add_argument('-restore', default='reID_v0.pt', type=str,
+parser.add_argument('-restore', default='reIDss_526001.pt', type=str,
 # parser.add_argument('-restore', default=None, type=str,
                    help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
@@ -42,7 +43,7 @@ parser.add_argument('-score', default='', type=str,
                     help="score_fn")
 parser.add_argument('-pretrain', default=False, type=bool,
                     help="load pretrain embedding")
-parser.add_argument('-notrain', default=0, type=bool,
+parser.add_argument('-notrain', default=1, type=bool,
                     help="train or not")
 parser.add_argument('-limit', default=0, type=int,
                     help="data limit")
@@ -467,9 +468,45 @@ def eval(epoch):
         })
 
         del ss_loss,hiddens
+        if 0 and config.reID:
+            print '#'*30+'ReID part '+'#'*30
+            predict_multi_map=predicted_masks*x_input_map_multi
+            predict_multi_map=predict_multi_map.view(-1,mix_speech_len,speech_fre).transpose(0,1)
+            tgt_reID = Variable(torch.ones(3,top_k*config.batch_size)) # 这里随便给一个tgt，为了测试阶段tgt的名字无所谓其实。
+            src_len_reID = Variable(torch.LongTensor(topk*config.batch_size).zero_()+mix_speech_len).unsqueeze(0).cuda()
+            try:
+                if 1 and len(opt.gpus) > 1:
+                    # samples, alignment = model.module.sample(src, src_len)
+                    samples, alignment, hiddens, predicted_masks = model.module.beam_sample(predict_multi_map, src_len_reID, dict_spk2idx, tgt_reID, beam_size=config.beam_size)
+                else:
+                    samples, alignment, hiddens, predicted_masks = model.beam_sample(predict_multi_map, src_len_reID, dict_spk2idx, tgt_reID, beam_size=config.beam_size)
+                    # samples, alignment, hiddens, predicted_masks = model.beam_sample(src, src_len, dict_spk2idx, tgt, beam_size=config.beam_size)
+            except Exception,info:
+                print '**************Error eval occurs here************:', info
+            # outputs_reID, targets_reID, multi_mask_reID = model(predict_multi_map, src_len_reID, tgt_reID, tgt_len_reID) #这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
+            if batch_idx<=(500/config.batch_size): #only the former batches counts the SDR
+                # predicted_maps=predicted_masks*x_input_map_multi
+                predicted_maps=predicted_masks*predict_multi_map.transpose(0,1).unsqueeze(1)
+                predicted_maps=predicted_maps.transpose(0,1)
+                # predicted_maps=Variable(feas_tgt)
+                utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_output23jo')
+                del predicted_maps,predicted_masks,x_input_map_multi,predict_multi_map
+                SDR,SDRi=bss_test.cal('batch_output23jo/')
+                # SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_output23jo/'))
+                SDR_SUM = np.append(SDR_SUM, SDR)
+                SDRi_SUM = np.append(SDRi_SUM, SDRi)
+                print 'SDR_aver_now:',SDR_SUM.mean()
+                print 'SDRi_aver_now:',SDRi_SUM.mean()
+                lera.log({'SDR sample':SDR_SUM.mean()})
+                lera.log({'SDRi sample':SDRi_SUM.mean()})
+            elif batch_idx==(500/config.batch_size)+1 and SDR_SUM.mean()>best_SDR: #only record the best SDR once.
+                print 'Best SDR from {}---->{}'.format(best_SDR,SDR_SUM.mean())
+                best_SDR=SDR_SUM.mean()
+                # save_model(log_path+'checkpoint_bestSDR{}.pt'.format(best_SDR))
+            print '#'*30+'ReID part '+'#'*30
 
         # '''''
-        if batch_idx<=(500/config.batch_size): #only the former batches counts the SDR
+        elif batch_idx<=(5000/config.batch_size): #only the former batches counts the SDR
             predicted_maps=predicted_masks*x_input_map_multi
             # predicted_maps=Variable(feas_tgt)
             utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_output23jo')
@@ -482,7 +519,7 @@ def eval(epoch):
             print 'SDRi_aver_now:',SDRi_SUM.mean()
             lera.log({'SDR sample':SDR_SUM.mean()})
             lera.log({'SDRi sample':SDRi_SUM.mean()})
-        elif batch_idx==(500/config.batch_size)+1 and SDR_SUM.mean()>best_SDR: #only record the best SDR once.
+        elif batch_idx==(5000/config.batch_size)+1 and SDR_SUM.mean()>best_SDR: #only record the best SDR once.
             print 'Best SDR from {}---->{}'.format(best_SDR,SDR_SUM.mean())
             best_SDR=SDR_SUM.mean()
             # save_model(log_path+'checkpoint_bestSDR{}.pt'.format(best_SDR))
