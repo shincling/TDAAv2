@@ -377,12 +377,39 @@ def eval(epoch):
             feas_tgt = feas_tgt.cuda()
             if config.WFM:
                 WFM_mask= WFM_mask.cuda()
+
+        if config.buffer_size or config.buffer_shift: # first convet to realtime batches
+            assert src.size()[1]==1
+            left_padding=Variable(torch.zeros(config.buffer_size,src.size()[1],src.size()[-1]).cuda())
+            src=torch.cat((left_padding,src),dim=0)
+
+            split_idx=0
+            src_new= Variable(torch.zeros(config.buffer_size+config.buffer_shift,mix_speech_len/config.buffer_shift+1,src.size()[-1]).cuda())
+            batch_counter=0
+            while True:
+                print 'split_idx at:',split_idx
+                split_len=config.buffer_size+config.buffer_shift # the len of every split
+                if split_idx+split_len>src.size()[0]: # if pass the right length
+                    print 'Need to add right padding with len:',(split_idx+split_len)-src.size()[0]
+                    right_padding= Variable(torch.zeros((split_idx+split_len)-src.size()[0],src.size()[1],src.size()[-1]).cuda())
+                    src=torch.cat((src,right_padding),dim=0)
+                    src_split=src[split_idx:(split_idx+split_len)]
+                    src_new[:,batch_counter]=src_split
+                    break
+                src_split=src[split_idx:(split_idx+split_len)]
+                src_new[:,batch_counter]=src_split
+                split_idx+=config.buffer_shift
+                batch_counter+=1
+            assert batch_counter+1==src_new.size()[1]
+            src_len[0]=config.buffer_shift+config.buffer_size
+            src_len=src_len.expand(1,src_new.size()[1])
+
         try:
             if 1 and len(opt.gpus) > 1:
                 # samples, alignment = model.module.sample(src, src_len)
-                samples, alignment, hiddens, predicted_masks = model.module.beam_sample(src, src_len, dict_spk2idx, tgt, beam_size=config.beam_size)
+                samples, alignment, hiddens, predicted_masks = model.module.beam_sample(src_new, src_len, dict_spk2idx, tgt, beam_size=config.beam_size)
             else:
-                samples, alignment, hiddens, predicted_masks = model.beam_sample(src, src_len, dict_spk2idx, tgt, beam_size=config.beam_size)
+                samples, alignment, hiddens, predicted_masks = model.beam_sample(src_new, src_len, dict_spk2idx, tgt, beam_size=config.beam_size)
                 # samples, alignment, hiddens, predicted_masks = model.beam_sample(src, src_len, dict_spk2idx, tgt, beam_size=config.beam_size)
         except Exception,info:
             print '**************Error occurs here************:', info
@@ -390,6 +417,20 @@ def eval(epoch):
 
         if config.top1:
             predicted_masks=torch.cat([predicted_masks,1-predicted_masks],1)
+
+        if config.buffer_size and config.buffer_shift: # then recover the whole maps
+            # masks:[7,topk,buffer_size+buffer_shift,fre]
+            masks_recover= Variable(torch.zeros(1,predicted_masks.size(1),mix_speech_len,speech_fre).cuda())
+            recover_idx=0
+            for batch_counter in range(predicted_masks.size(0)):
+                if not batch_counter==predicted_masks.size(0)-1:
+                    masks_recover[:,:,recover_idx:recover_idx+config.buffer_shift]=predicted_masks[batch_counter,:,-1*config.buffer_shift:]
+                else: # the last shift
+                    assert mix_speech_len-recover_idx==config.buffer_shift-right_padding.size(0)
+                    masks_recover[:,:,recover_idx:]=predicted_masks[batch_counter,:,-1*config.buffer_shift:(-1*right_padding.size(0))]
+                recover_idx+=config.buffer_shift
+            predicted_masks=masks_recover
+            src = Variable(torch.from_numpy(eval_data['mix_feas'])).transpose(0,1).cuda()
 
         # '''
         # expand the raw mixed-features to topk channel.
@@ -414,7 +455,7 @@ def eval(epoch):
 
         # '''''
         if batch_idx<=(500/config.batch_size): #only the former batches counts the SDR
-            x_input_map_multi=x_input_map_multi[:,:,:config.buffer_shift]
+            # x_input_map_multi=x_input_map_multi[:,:,:config.buffer_shift]
             predicted_maps=predicted_masks*x_input_map_multi
             # predicted_maps=Variable(feas_tgt)
             utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_outputwaddd')
