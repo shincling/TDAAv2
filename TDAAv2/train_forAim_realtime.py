@@ -25,7 +25,7 @@ import code
 #config
 parser = argparse.ArgumentParser(description='train.py')
 
-parser.add_argument('-config', default='config.yaml', type=str,
+parser.add_argument('-config', default='config_realtime.yaml', type=str,
                     help="config file")
 parser.add_argument('-gpus', default=[2], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
@@ -400,6 +400,7 @@ def eval(epoch):
         x_input_map_multi=torch.unsqueeze(src,1).expand(siz[0],topk,siz[1],siz[2])
         if config.WFM:
             feas_tgt=x_input_map_multi.data*WFM_mask
+        '''
         if 1 and len(opt.gpus) > 1:
             ss_loss = model.module.separation_loss(x_input_map_multi, predicted_masks, feas_tgt,Var)
         else:
@@ -413,6 +414,7 @@ def eval(epoch):
 
         # '''''
         if batch_idx<=(500/config.batch_size): #only the former batches counts the SDR
+            x_input_map_multi=x_input_map_multi[:,:,:config.buffer_shift]
             predicted_maps=predicted_masks*x_input_map_multi
             # predicted_maps=Variable(feas_tgt)
             utils.bss_eval(config, predicted_maps,eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_outputwaddd')
