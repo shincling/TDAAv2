@@ -11,7 +11,7 @@ import data.utils as utils
 import data.dict as dict
 from optims import Optim
 import lr_scheduler as L
-from predata_fromList_123 import prepare_data,prepare_datasize
+from predata_fromList_123_aim import prepare_data,prepare_datasize
 import bss_test
 
 import os
@@ -429,7 +429,7 @@ def eval(epoch):
             SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_outputwaddd/'))
             print 'SDR_aver_now:',SDR_SUM.mean()
             lera.log({'SDR sample':SDR_SUM.mean()})
-            # raw_input('Press any key to continue......')
+            raw_input('Press any key to continue......')
         elif batch_idx==(500/config.batch_size)+1 and SDR_SUM.mean()>best_SDR: #only record the best SDR once.
             print 'Best SDR from {}---->{}'.format(best_SDR,SDR_SUM.mean())
             best_SDR=SDR_SUM.mean()

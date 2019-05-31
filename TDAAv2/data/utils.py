@@ -123,12 +123,14 @@ def bss_eval(config, predict_multi_map,y_multi_map,y_map_gtruth,train_data,dst='
             min_len = 39936
             if config.FRAME_SHIFT==64:
                 min_len = len(wav_genTrue)
+            # min_len = 3776
             sf.write(dst+'/{}_{}_realTrue.wav'.format(sample_idx,this_spk),wav_genTrue[:min_len],config.FRAME_RATE,)
 
     # 对于每个sample
     sample_idx=0 #代表一个batch里的依次第几个
     for each_y,each_pre,each_trueVector,spk_name in zip(y_multi_map,predict_multi_map,y_map_gtruth,train_data['aim_spkname']):
         _mix_spec=train_data['mix_phase'][sample_idx]
+        # _mix_spec=_mix_spec[:config.buffer_shift]
         phase_mix = np.angle(_mix_spec)
         for idx,one_cha in enumerate(each_trueVector):
             this_spk=one_cha

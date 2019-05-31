@@ -33,7 +33,8 @@ class seq2seq(nn.Module):
 
         speech_fre=input_emb_size
         num_labels=tgt_vocab_size
-        self.ss_model=models.SS(config, speech_fre, mix_speech_len, num_labels)
+        # self.ss_model=models.SS(config, speech_fre, mix_speech_len, num_labels)
+        self.ss_model=models.SS(config, speech_fre, config.buffer_shift+config.buffer_size, num_labels)
 
     def compute_loss(self, hidden_outputs, targets, memory_efficiency):
         if memory_efficiency:
@@ -236,6 +237,7 @@ class seq2seq(nn.Module):
         else:
             ss_embs=Variable(torch.stack(allEmbs,0).transpose(0,1)) # to [decLen, bs, dim]
             if not self.config.top1:
+                # src=src[:,:self.config.buffer_shift]
                 predicted_maps=self.ss_model(src,ss_embs[1:,:],tgt[1:-1])
             else:
                 predicted_maps=self.ss_model(src,ss_embs[1:2],tgt[1:2])

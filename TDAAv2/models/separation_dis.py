@@ -283,6 +283,7 @@ class SS(nn.Module):
     def forward(self, mix_feas, hidden_outputs, targets):
         config=self.config
         top_k_num,batch_size=targets.size()
+        batch_size=mix_feas.size(0)
         mix_speech_hidden,mix_tmp_hidden=self.mix_hidden_layer_3d(mix_feas)
         mix_speech_multiEmbs=torch.transpose(hidden_outputs,0,1).contiguous()# bs*num_labels（最多混合人个数）×Embedding的大小
         if self.config.is_SelfTune:
