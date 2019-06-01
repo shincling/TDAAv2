@@ -32,8 +32,8 @@ parser.add_argument('-gpus', default=[7], nargs='+', type=int,
 # parser.add_argument('-restore', default='TDAA2019_15001.pt', type=str,
 #parser.add_argument('-restore', default='best_f1_hidden_v8.pt', type=str,
 # parser.add_argument('-restore', default='reID_v0.pt', type=str,
-parser.add_argument('-restore', default='reIDss_526001.pt', type=str,
-# parser.add_argument('-restore', default=None, type=str,
+# parser.add_argument('-restore', default='reIDss_526001.pt', type=str,
+parser.add_argument('-restore', default=None, type=str,
                    help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
                     help="Random seed")
@@ -43,7 +43,7 @@ parser.add_argument('-score', default='', type=str,
                     help="score_fn")
 parser.add_argument('-pretrain', default=False, type=bool,
                     help="load pretrain embedding")
-parser.add_argument('-notrain', default=1, type=bool,
+parser.add_argument('-notrain', default=0, type=bool,
                     help="train or not")
 parser.add_argument('-limit', default=0, type=int,
                     help="data limit")

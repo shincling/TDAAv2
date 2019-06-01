@@ -249,8 +249,9 @@ class ADDJUST(nn.Module):
         self.layer=nn.Linear(hidden_units+embedding_size,embedding_size,bias=False)
 
     def forward(self,input_hidden,prob_emb):
+        batch_size=input_hidden.size()[0]
         top_k_num=prob_emb.size()[1]
-        x=torch.mean(input_hidden,1).view(self.config.batch_size,1,self.hidden_units).expand(self.config.batch_size,top_k_num,self.hidden_units)
+        x=torch.mean(input_hidden,1).view(batch_size,1,self.hidden_units).expand(batch_size,top_k_num,self.hidden_units)
         can=torch.cat([x,prob_emb],dim=2)
         all=self.layer(can) # bs*num_labels（最多混合人个数）×Embedding的大小
         out=all

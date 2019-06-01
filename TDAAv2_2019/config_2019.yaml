@@ -1,7 +1,7 @@
 data:  './data/data/save_data'
 log:  './data/data/log/'
 epoch:  200
-batch_size: 3
+batch_size: 1
 param_init:  0.1
 optim:  'adam'
 learning_rate:  0.0001
@@ -35,10 +35,10 @@ hidden_mix: 0 #这个模式是不采用global emb的时候，把hidden和下一�
 #hidden_mix: 1 #这个模式是不采用global emb的时候，把hidden和下一步的embeding一起cat起来作为ss的输入进去。
 #SPK_EMB_SIZE : 768 #512+256 注意这个东西需要和上面的spk_emb（如果是global_emb的话）,否认则就跟decoder的hidden_size对应
 schmidt: 0
-unit_norm: 0 #hidden use the unit circle, >0.9 will add the loss.
+unit_norm: 1 #hidden use the unit circle, >0.9 will add the loss.
 #unit_norm: 0.9 #hidden use the unit circle, >0.9 will add the loss.
 reID: 1
-is_SelfTune :  0
+is_SelfTune :  1
 is_dis: 0
 speech_cnn_net: 0 #是否采用CNN的结构来抽取
 relitu: 0

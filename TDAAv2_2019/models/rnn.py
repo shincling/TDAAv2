@@ -135,7 +135,8 @@ class rnn_decoder(nn.Module):
                     output=torch.nn.functional.normalize(output,2)
                 if self.config.schmidt:
                     output = models.schmidt(output,outputs)
-                # output = self.dropout(output)
+                if not self.config.unit_norm:
+                    output = self.dropout(output)
                 if self.config.ct_recu:
                     contexts= (1-(attn_weights>0.003).float()).unsqueeze(-1)*contexts
                     # contexts= (1-attn_weights).unsqueeze(-1)*contexts
