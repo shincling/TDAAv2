@@ -83,10 +83,10 @@ def process_signal(signal, rate, aim_len, normalize=True, num_ordier=None):
         signal -= np.mean(signal)  # 语音信号预处理，先减去均值
         signal /= (np.max(np.abs(signal))+np.spacing(1))  # 波形幅值预处理，幅值归一化
 
-    if num_ordier == 0 and signal.shape[0] < aim_len:  # 第一个信号根据最大长度用 0 补齐,
-        signal = np.append(signal, np.zeros(aim_len - signal.shape[0]))
+    # if num_ordier == 0 and signal.shape[0] < aim_len:  # 第一个信号根据最大长度用 0 补齐,
+    #     signal = np.append(signal, np.zeros(aim_len - signal.shape[0]))
 
-    if num_ordier != 0 and signal.shape[0] < aim_len:  # 之后的信号引入一个偏移，然后用根据最大长度用 0 补齐,
+    if  signal.shape[0] < aim_len:  # 所有信号引入一个偏移，然后用根据最大长度用 0 补齐,
         shift_frames = random.sample(range(aim_len - signal.shape[0] + 1), 1)[0]  # 0~长度差
         signal = np.append(np.append(np.zeros(shift_frames), signal),
                            np.zeros(aim_len - signal.shape[0] - shift_frames))
@@ -212,15 +212,17 @@ def prepare_data(mode, train_or_test, min=None, max=None, add_noise_ratio=0.5):
                             sampled_noise = random.sample(all_noise_samples, 1)[0]  # 选出用哪儿一
                             noise_path_aim = noise_path_aim + sampled_noise
                             noise, rate = sf.read(noise_path_aim)  # signal 是采样值，rate 是采样频率
-                            if noise.shape[0] < config.MIN_LEN:  # 根据最大长度裁剪
+                            # if noise.shape[0] < config.MIN_LEN:  # 根据最大长度裁剪
+                            if noise.shape[0] < config.MAX_LEN:  # 达不到设定好的混合语音长度的噪音就pass掉
                                 continue
                             else:
                                 break
 
                         noise = process_signal(noise, rate, config.MAX_LEN, num_ordier=k)
                         if config.noise_dB:
-                            dB_rate = np.random.uniform(config.noise_dB, 0, 1)  # 10**(-1——0)
-                            ratio = 10 ** (dB_rate / 20.0)
+                            dB_rate = np.random.uniform(config.noise_dB, 0, 1)  # 10**(-0.5——0)
+                            dB_rate_noise = -10
+                            ratio = 10 ** (dB_rate_noise / 20.0) #基本是原来的0.3左右
                             noise = ratio * noise
                             # print 'the noise with ratio:{}'.format(ratio)
                         wav_mix = wav_mix + noise

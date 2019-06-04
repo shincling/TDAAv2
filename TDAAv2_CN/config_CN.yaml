@@ -1,7 +1,7 @@
 data:  './data/data/save_data'
 log:  './data/data/log/'
 epoch:  200 #epoch总数
-batch_size: 1
+batch_size: 16
 param_init:  0.1
 optim:  'adam'
 learning_rate:  0.0001
@@ -23,7 +23,7 @@ save_interval:  3000
 max_generator_batches:  32
 metric:  ['hamming_loss', 'micro_f1']
 shared_vocab:  0
-WFM: 0
+WFM: 1
 MLMSE: 0
 beam_size:  5
 tmp_score: 0
@@ -48,7 +48,7 @@ quchong_alpha: 1
 
 
 # 设定最小混叠说话人数，Minimum number of mixed speakers for training
-MIN_MIX :  2
+MIN_MIX :  1
 # 设定最大混叠说话人数，Maximum number of mixed speakers for training
 MAX_MIX :  2
 # mode: 1 纯净语音刺激, 2 图片刺激, 3 视频刺激, 4 top-down概念刺激
@@ -97,7 +97,8 @@ normalize: 1 #是否波形归一化
 # 设置训练/开发/验证模型的最大语音长度(秒)
 MIN_LEN :  48000
 #MAX_LEN :  FRAME_RATE*MAX_LEN
-MAX_LEN :  160000
+#MAX_LEN :  160000
+MAX_LEN :  96000 # 6s 避免多的无人声区域
 # 帧长
 WINDOWS :  FRAME_LENGTH
 START_EALY_STOP :  0
