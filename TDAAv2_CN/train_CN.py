@@ -29,9 +29,9 @@ parser = argparse.ArgumentParser(description='train_CN.py')
 
 parser.add_argument('-config', default='config_CN.yaml', type=str,
                     help="config file")
-# parser.add_argument('-gpus', default=range(8), nargs='+', type=int,
-parser.add_argument('-gpus', default=[2], nargs='+', type=int,
-                    help="Use CUDA on the listed devices.")
+parser.add_argument('-gpus', default=range(8), nargs='+', type=int,
+#parser.add_argument('-gpus', default=[2], nargs='+', type=int,
+                   help="Use CUDA on the listed devices.")
 #parser.add_argument('-restore', default='sscn_v01a_wfm.pt', type=str,
 # parser.add_argument('-restore', default='sscn_v01a_264001.pt', type=str,
 parser.add_argument('-restore', default='sscn_v01b_best_204001.pt', type=str,
@@ -45,7 +45,7 @@ parser.add_argument('-score', default='', type=str,
                     help="score_fn")
 parser.add_argument('-pretrain', default=False, type=bool,
                     help="load pretrain embedding")
-parser.add_argument('-notrain', default=1, type=bool,
+parser.add_argument('-notrain', default=0, type=bool,
                     help="train or not")
 parser.add_argument('-limit', default=0, type=int,
                     help="data limit")
@@ -92,8 +92,8 @@ batch_total=global_para['total_batch_num']
 
 config.speech_fre=speech_fre
 mix_speech_len=total_frames
-mix_speech_len=626
-mix_speech_len=1251
+# mix_speech_len=626
+# mix_speech_len=1251
 config.mix_speech_len=total_frames
 del spk_global_gen
 num_labels=len(spk_all_list)
@@ -192,7 +192,7 @@ with open(opt.label_dict_file, 'r') as f:
 
 # train
 lera.log_hyperparams({
-  'title': unicode('SS CN v0.1b') ,
+  'title': unicode('SS CN v0.2a') ,
   'updates':updates,
   'batch_size': config.batch_size,
   'WFM':config.WFM,

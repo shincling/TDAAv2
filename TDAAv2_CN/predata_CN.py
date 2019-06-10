@@ -203,7 +203,9 @@ def prepare_data(mode, train_or_test, min=None, max=None, add_noise_ratio=0.5):
 
                 if add_noise_ratio:  # 添加noise的比例
                     assert noise_path  # 确保有noise的路径
-                    if random.random() < add_noise_ratio:
+                    rad=random.random()
+                    if (mix_k==1 and rad<0.9) or (mix_k!=1 and rad<0.3): #单个说话人有90的几率添加噪音，多说哈uren30%的几率添加噪音
+                    # if random.random() < add_noise_ratio:
                         while True:  # 确保抽样出长度大于min_len
                             all_noise_type = sorted(os.listdir(noise_path))
                             sampled_noise_type = random.sample(all_noise_type, 1)[0]  # 选出用哪儿一种噪
