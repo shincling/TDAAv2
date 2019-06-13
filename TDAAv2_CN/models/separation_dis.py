@@ -84,8 +84,8 @@ class ATTENTION(nn.Module):
     def forward(self,mix_hidden,query):
         #todo:这个要弄好，其实也可以直接抛弃memory来进行attention | DONE
         BATCH_SIZE=mix_hidden.size()[0]
-        # assert query.size()==(BATCH_SIZE,self.hidden_size)
-        # assert mix_hidden.size()[-1]==self.hidden_size
+        assert query.size()==(BATCH_SIZE,self.query_size)
+        assert mix_hidden.size()[-1]==self.hidden_size
         #mix_hidden：bs,max_len,fre,hidden_size  query:bs,hidden_size
         if self.mode=='dot':
             # mix_hidden=mix_hidden.view(-1,1,self.hidden_size)
@@ -301,6 +301,7 @@ class SS(nn.Module):
         mix_speech_multiEmbs=mix_speech_multiEmbs.view(-1,config.SPK_EMB_SIZE)# bs*num_labels（最多混合人个数）×Embedding的大小
         # assert mix_speech_multiEmbs.size()[0]==targets.shape
         mix_speech_multiEmbs=mix_speech_multiEmbs[aim_list] # aim_num,embs
+        # mix_speech_multiEmbs=mix_speech_multiEmbs[0] # aim_num,embs
         # print mix_speech_multiEmbs.shape
         if self.config.is_SelfTune:
             # TODO: 这里应该也是有问题的，暂时不用selfTune
