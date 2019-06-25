@@ -208,6 +208,7 @@ def prepare_data(mode, train_or_test, min=None, max=None, add_noise_ratio=0.5):
                     # if random.random() < add_noise_ratio:
                         while True:  # 确保抽样出长度大于min_len
                             all_noise_type = sorted(os.listdir(noise_path))
+                            all_noise_type.remove('noise_MUSIC') #暂时这个CD音乐都有问题，先去掉
                             sampled_noise_type = random.sample(all_noise_type, 1)[0]  # 选出用哪儿一种噪
                             noise_path_aim = noise_path + sampled_noise_type + '/'
                             all_noise_samples = sorted(os.listdir(noise_path_aim))
