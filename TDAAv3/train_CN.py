@@ -229,11 +229,7 @@ def train(epoch):
         siz = src.size()
         assert len(siz) == 3
         topk_max = config.MAX_MIX  # 最多可能的topk个数
-        x_input_map_multi = torch.unsqueeze(src, 1).expand(siz[0], topk_max, siz[1], siz[2]).contiguous().view(-1,
-                                                                                                               siz[
-                                                                                                                   1],
-                                                                                                               siz[
-                                                                                                                   2])
+        x_input_map_multi = torch.unsqueeze(src, 1).expand(siz[0], topk_max, siz[1], siz[2]).contiguous().view(-1, siz[1], siz[2])
         x_input_map_multi = x_input_map_multi[aim_list]
         multi_mask = multi_mask.transpose(0, 1)
 
