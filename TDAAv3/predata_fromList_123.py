@@ -301,9 +301,14 @@ def prepare_data(mode, train_or_test, min=None, max=None):
                         all_spk_test = sorted(all_spk_test)
                         dict_spk_to_idx = {spk: idx for idx, spk in enumerate(all_spk)}
                         dict_idx_to_spk = {idx: spk for idx, spk in enumerate(all_spk)}
-                        yield all_spk, dict_spk_to_idx, dict_idx_to_spk, \
-                              aim_fea.shape[1], aim_fea.shape[2], 32, len(all_spk), batch_total
-                        # 上面的是：语音长度、语音频率、视频分割多少帧 TODO:后面把这个替换了query.shape[1]
+                        yield {'all_spk': all_spk,
+                               'dict_spk_to_idx': dict_spk_to_idx,
+                               'dict_idx_to_spk': dict_idx_to_spk,
+                               'num_fre': aim_fea.shape[2],  # 语音频率
+                               'num_frames': aim_fea.shape[1],  # 语音长度
+                               'total_spk_num': len(all_spk),
+                               'total_batch_num': batch_total
+                               }
                     elif mode == 'once':
                         yield {'mix_wav': mix_speechs,
                                'mix_feas': mix_feas,

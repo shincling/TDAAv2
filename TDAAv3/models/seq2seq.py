@@ -12,7 +12,7 @@ import numpy as np
 
 class seq2seq(nn.Module):
 
-    def __init__(self, config, input_emb_size, mix_speech_len, tgt_vocab_size, use_cuda, pretrain=None, score_fn=None):
+    def __init__(self, config, input_emb_size, mix_speech_len, tgt_vocab_size, use_cuda, pretrain=None, score_fn=''):
         super(seq2seq, self).__init__()
         if pretrain is not None:
             src_embedding = pretrain['src_emb']
