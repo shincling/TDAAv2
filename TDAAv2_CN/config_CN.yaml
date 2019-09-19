@@ -1,10 +1,10 @@
 data:  './data/data/save_data'
 log:  './data/data/log/'
-epoch:  200 #epoch总数
+epoch:  300 #epoch总数
 batch_size: 16
 param_init:  0.1
 optim:  'adam'
-learning_rate:  0.0001
+learning_rate:  0.001
 max_grad_norm:  10
 learning_rate_decay:  0.5
 
@@ -23,7 +23,7 @@ save_interval:  3000
 max_generator_batches:  32
 metric:  ['hamming_loss', 'micro_f1']
 shared_vocab:  0
-WFM: 1
+WFM: 0
 MLMSE: 0
 beam_size:  5
 tmp_score: 0

@@ -12,8 +12,8 @@ import data.dict as dict
 from optims import Optim
 import lr_scheduler as L
 from predata_CN import prepare_data
-# from predata_CN_aim import prepare_data
-from predata_fromList_123 import prepare_data as prepare_data_aim
+# from predata_CN_aim import prepare_data as prepare_data_aim
+# from predata_fromList_123 import prepare_data as prepare_data_aim
 import bss_test
 
 import os
@@ -30,12 +30,14 @@ parser = argparse.ArgumentParser(description='train_CN.py')
 parser.add_argument('-config', default='config_CN.yaml', type=str,
                     help="config file")
 parser.add_argument('-gpus', default=range(8), nargs='+', type=int,
-#parser.add_argument('-gpus', default=[2], nargs='+', type=int,
+# parser.add_argument('-gpus', default=[2], nargs='+', type=int,
                    help="Use CUDA on the listed devices.")
 #parser.add_argument('-restore', default='sscn_v01a_wfm.pt', type=str,
 # parser.add_argument('-restore', default='sscn_v01a_264001.pt', type=str,
-parser.add_argument('-restore', default='sscn_v01b_best_204001.pt', type=str,
-# parser.add_argument('-restore', default=None, type=str,
+# parser.add_argument('-restore', default='sscn_v01b_best_204001.pt', type=str,
+# parser.add_argument('-restore', default='sscn_39001.pt', type=str,
+# parser.add_argument('-restore', default='sscn_v01b_186001.pt', type=str,
+parser.add_argument('-restore', default=None, type=str,
                    help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
                     help="Random seed")
@@ -315,6 +317,7 @@ def train(epoch):
                 # predicted_maps=Variable(feas_tgt)
                 utils.bss_eval(config, predicted_maps,train_data['multi_spk_fea_list'], raw_tgt, train_data, dst='batch_outputjaa')
                 del predicted_maps,multi_mask,x_input_map_multi
+                # raw_input('wait to continue......')
                 sdr_aver_batch=bss_test.cal('batch_outputjaa/')
                 lera.log({'SDR sample':sdr_aver_batch})
                 SDR_SUM = np.append(SDR_SUM, sdr_aver_batch)

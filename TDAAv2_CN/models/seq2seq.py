@@ -147,6 +147,7 @@ class seq2seq(nn.Module):
         mask = None
         soft_score = None
         tmp_hiddens=[]
+        tmp_soft_score=[]
         for i in range(self.config.max_tgt_len):
 
             if all((b.done() for b in beam)):
@@ -174,6 +175,13 @@ class seq2seq(nn.Module):
             if self.config.ct_recu:
                 contexts= (1-(attn>0.003).float()).unsqueeze(-1)*contexts
             soft_score = F.softmax(output)
+            if self.config.tmp_score:
+                tmp_soft_score+=[soft_score]
+                if i==1:
+                    kl_loss=np.array([])
+                    for kk in range(self.config.beam_size):
+                        kl_loss=np.append(kl_loss,F.kl_div(soft_score[kk],tmp_soft_score[0][kk]).data[0])
+                    kl_loss=Variable(torch.from_numpy(kl_loss).float().cuda().unsqueeze(-1))
             predicted = output.max(1)[1]
             if self.config.mask:
                 if mask is None:
@@ -183,7 +191,10 @@ class seq2seq(nn.Module):
             # decOut: beam x rnn_size
 
             # (b) Compute a vector of batch*beam word scores.
-            output = unbottle(self.log_softmax(output))
+            if self.config.tmp_score and i==1:
+                output = unbottle(self.log_softmax(output)+self.config.tmp_score*kl_loss)
+            else:
+                output = unbottle(self.log_softmax(output))
             attn = unbottle(attn)
             hidden = unbottle(hidden)
             emb = unbottle(emb)

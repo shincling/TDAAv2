@@ -33,6 +33,8 @@ random.seed(1)
 # 存放数据的位置，需要改动一下，这个是在70上的路径
 aim_path = '/data3/data_aishell/wav/'  # 400 in total
 noise_path = '/data3/noise/'
+# aim_path = '../../../data_aishell/wav/'  # 400 in total
+# noise_path = '../../../noise/'
 
 
 def split_forTrainDevTest(given_list, train_or_test, phase):

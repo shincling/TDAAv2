@@ -35,6 +35,10 @@ random.seed(1)
 aim_path = '/data3/data_aishell/wav/'  # 400 in total
 noise_path = '/data3/noise/'
 aim_wav='/data3/shijing/cw-mix.wav'
+aim_wav='/data3/shijing/cw-back9-mix.wav'
+aim_wav='/data3/shijing/cw-hand7-mix.wav'
+aim_wav='/data3/shijing/sff-90music-mix.wav'
+aim_wav='/data3/shijing/sff-180music-mix.wav'
 wav_mix_pre, rate_pre = sf.read(aim_wav)  # wav_mix 是采样值，rate 是采样频率
 config.MAX_LEN=wav_mix_pre.shape[0]
 
@@ -104,7 +108,7 @@ def process_signal(signal, rate, aim_len, normalize=True, num_ordier=None):
     return signal
 
 
-def prepare_data(mode, train_or_test, min=None, max=None, add_noise_ratio=0.5):
+def prepare_data(mode, train_or_test, min=None, max=None, add_noise_ratio=0.0):
     '''
     :param
     mode: type str, 'global' or 'once' ， global用来获取全局的spk_to_idx的字典，所有说话人的列表等等
