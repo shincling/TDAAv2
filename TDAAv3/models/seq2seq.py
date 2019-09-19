@@ -29,7 +29,7 @@ class seq2seq(nn.Module):
         self.use_cuda = use_cuda
         self.tgt_vocab_size = tgt_vocab_size
         self.config = config
-        self.criterion = models.criterion(tgt_vocab_size, use_cuda)
+        self.criterion = models.criterion(tgt_vocab_size, use_cuda,config.loss)
         self.loss_for_ss = nn.MSELoss()
         self.log_softmax = nn.LogSoftmax()
 
@@ -77,7 +77,7 @@ class seq2seq(nn.Module):
                 predicted_maps = self.ss_model(src, mix, tgt[1:-1])
 
         else:
-            outputs, final_state, global_embs = self.decoder(tgt[:-1], state, contexts.transpose(0, 1))
+            outputs, final_state, global_embs = self.decoder(tgt, state, contexts.transpose(0, 1))
             # 这里的outputs就是没个step输出的隐层向量,大小是len+1,bs,emb（注意是第一个词到 EOS的总共）
             predicted_maps = self.ss_model(src, global_embs, tgt[1:-1], dict_spk2idx)
 
@@ -249,9 +249,11 @@ class seq2seq(nn.Module):
             if self.config.top1:
                 predicted_maps = predicted_maps[:, 0].unsqueeze(1)
         else:
+            # allEmbs=[j[1:self.config.MAX_MIX] for j in allEmbs]
             ss_embs = Variable(torch.stack(allEmbs, 0).transpose(0, 1))  # to [decLen, bs, dim]
             if not self.config.top1:
                 predicted_maps = self.ss_model(src, ss_embs[1:, :], tgt[1:-1], dict_spk2idx)
             else:
                 predicted_maps = self.ss_model(src, ss_embs[1:2], tgt[1:2])
+                # predicted_maps = self.ss_model(src, ss_embs, tgt[1:2])
         return allHyps, allAttn, allHiddens, predicted_maps  # .transpose(0,1)

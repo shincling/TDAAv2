@@ -106,6 +106,8 @@ class rnn_decoder(nn.Module):
             self.linear_query = nn.Linear(config.decoder_hidden_size, config.decoder_hidden_size)
             self.linear_weight = nn.Linear(config.emb_size, config.decoder_hidden_size)
             self.linear_v = nn.Linear(config.decoder_hidden_size, 1)
+        elif score_fn.startswith('arc_margin'):
+            self.linear = models.ArcMarginProduct(512,vocab_size,s=30,m=0.5,easy_margin=False)
         elif not self.score_fn.startswith('dot'):
             self.linear = nn.Linear(config.decoder_hidden_size, vocab_size)
 
@@ -124,12 +126,12 @@ class rnn_decoder(nn.Module):
             self.gated1 = nn.Linear(config.emb_size, config.emb_size)
             self.gated2 = nn.Linear(config.emb_size, config.emb_size)
 
-    def forward(self, inputs, init_state, contexts):
+    def forward(self, all_targets, init_state, contexts):
+        inputs=all_targets[:-1]
         if not self.config.global_emb:
             embs = self.embedding(inputs)  # 如果不用global_emb，那么就直接一个简单的emb给下一个step.
             outputs, state, attns = [], init_state, []
-            for emb in embs.split(
-                    1):  # 对于每个step的target词语, 这个循环应该是针对训练集当中的n的（目标标签数目）,就是把第一个排列成一个tuple(也就是这个batch里label最多的那个的label数目）
+            for emb in embs.split(1):  # 对于每个step的target词语, 这个循环应该是针对训练集当中的n的（目标标签数目）,就是把第一个排列成一个tuple(也就是这个batch里label最多的那个的label数目）
                 output, state = self.rnn(emb.squeeze(0), state)
                 output, attn_weights = self.attention(output, contexts)
                 if self.config.schmidt:
@@ -151,7 +153,10 @@ class rnn_decoder(nn.Module):
             output, state = self.rnn(emb.squeeze(0), state)
             output, attn_weights = self.attention(output, contexts)
             output = self.dropout(output)
-            soft_score = F.softmax(self.linear(output))  # 第一步的概率分布也就是 bs,vocal这么大
+            if self.score_fn.startswith('arc_margin'):
+                soft_score = F.softmax(self.linear(output,all_targets[1,:]))  # 第一步的概率分布也就是 bs,vocal这么大
+            else:
+                soft_score = F.softmax(self.linear(output))  # 第一步的概率分布也就是 bs,vocal这么大
             outputs += [output]
             attns += [attn_weights]
 
@@ -168,7 +173,10 @@ class rnn_decoder(nn.Module):
                 output, state = self.rnn(emb, state)
                 output, attn_weights = self.attention(output, contexts)
                 output = self.dropout(output)
-                soft_score = F.softmax(self.linear(output))
+                if self.score_fn.startswith('arc_margin'):
+                    soft_score = F.softmax(self.linear(output,all_targets[i+2,:]))  # 第一步的概率分布也就是 bs,vocal这么大
+                else:
+                    soft_score = F.softmax(self.linear(output))  # 第一步的概率分布也就是 bs,vocal这么大
                 outputs += [output]
                 attns += [attn_weights]
             outputs = torch.stack(outputs)
@@ -176,7 +184,7 @@ class rnn_decoder(nn.Module):
             attns = torch.stack(attns)
             return outputs, state, global_embs
 
-    def compute_score(self, hiddens):
+    def compute_score(self, hiddens,targets):
         if self.score_fn.startswith('general'):
             if self.score_fn.endswith('not'):
                 scores = torch.matmul(self.linear(hiddens), Variable(self.embedding.weight.t().data))
@@ -195,6 +203,8 @@ class rnn_decoder(nn.Module):
                 scores = torch.matmul(hiddens, Variable(self.embedding.weight.t().data))
             else:
                 scores = torch.matmul(hiddens, self.embedding.weight.t())
+        elif self.score_fn.startswith('arc_margin'):
+            scores = self.linear(hiddens,targets)
         else:
             scores = self.linear(hiddens)
         return scores

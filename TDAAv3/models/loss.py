@@ -5,6 +5,7 @@ import numpy as np
 import data.dict as dict
 from torch.autograd import Variable
 import torch.nn.functional as F
+import focal_loss
 
 
 def rank_feas(raw_tgt, feas_list):
@@ -16,10 +17,13 @@ def rank_feas(raw_tgt, feas_list):
     return torch.from_numpy(np.array(final_num))
 
 
-def criterion(tgt_vocab_size, use_cuda):
+def criterion(tgt_vocab_size, use_cuda,loss):
     weight = torch.ones(tgt_vocab_size)
     weight[dict.PAD] = 0
-    crit = nn.CrossEntropyLoss(weight, size_average=False)
+    if loss=='focal_loss':
+        crit = focal_loss.FocalLoss(gamma=2)
+    else:
+        crit = nn.CrossEntropyLoss(weight, size_average=False)
     if use_cuda:
         crit.cuda()
     return crit
@@ -50,12 +54,14 @@ def memory_efficiency_cross_entropy_loss(hidden_outputs, decoder, targets, crite
 
 
 def cross_entropy_loss(hidden_outputs, decoder, targets, criterion, config, sim_score=0):
+    # hidden_outputs:[max_len,bs,512]
+    targets=targets.view(-1)
     outputs = hidden_outputs.view(-1, hidden_outputs.size(2))
-    scores = decoder.compute_score(outputs)
+    scores = decoder.compute_score(outputs,targets.view(-1))
     loss = criterion(scores, targets.view(-1)) + sim_score
     pred = scores.max(1)[1]
     num_correct = pred.data.eq(targets.data).masked_select(targets.ne(dict.PAD).data).sum()
-    num_total = targets.ne(dict.PAD).data.sum()
+    num_total = targets.ne(dict.PAD).data.sum().float()
     loss = loss.div(num_total)
     # loss = loss.data[0]
 
@@ -73,15 +79,12 @@ def ss_loss(config, x_input_map_multi, multi_mask, y_multi_map, loss_multi_func)
     # y_sum_map=Variable(torch.ones(config.batch_size,config.mix_speech_len,config.speech_fre)).cuda()
     # predict_sum_map=torch.sum(multi_mask,1)
     # loss_multi_sum_speech=loss_multi_func(predict_sum_map,y_sum_map)
-    print
-    'loss 1 eval:  ', loss_multi_speech.data.cpu().numpy()
+    print 'loss 1 eval:  ', loss_multi_speech.data.cpu().numpy()
     # print 'losssum eval :',loss_multi_sum_speech.data.cpu().numpy()
     # loss_multi_speech=loss_multi_speech+0.5*loss_multi_sum_speech
-    print
-    'evaling multi-abs norm this eval batch:', torch.abs(y_multi_map - predict_multi_map).norm().data.cpu().numpy()
+    print 'evaling multi-abs norm this eval batch:', torch.abs(y_multi_map - predict_multi_map).norm().data.cpu().numpy()
     # loss_multi_speech=loss_multi_speech+3*loss_multi_sum_speech
-    print
-    'loss for whole separation part:', loss_multi_speech.data.cpu().numpy()
+    print 'loss for whole separation part:', loss_multi_speech.data.cpu().numpy()
     return loss_multi_speech
 
 
@@ -89,8 +92,7 @@ def ss_loss_MLMSE(config, x_input_map_multi, multi_mask, y_multi_map, loss_multi
     try:
         if Var == None:
             Var = Variable(torch.eye(config.speech_fre, config.speech_fre).cuda(), requires_grad=0)  # 初始化的是单位矩阵
-            print
-            'Set Var to:', Var
+            print 'Set Var to:', Var
     except:
         pass
     assert Var.size() == (config.speech_fre, config.speech_fre)
@@ -111,14 +113,11 @@ def ss_loss_MLMSE(config, x_input_map_multi, multi_mask, y_multi_map, loss_multi
     y_sum_map = Variable(torch.ones(config.batch_size, config.mix_speech_len, config.speech_fre)).cuda()
     predict_sum_map = torch.sum(multi_mask, 1)
     loss_multi_sum_speech = loss_multi_func(predict_sum_map, y_sum_map)
-    print
-    'loss 1 eval, losssum eval : ', loss_multi_speech.data.cpu().numpy(), loss_multi_sum_speech.data.cpu().numpy()
+    print 'loss 1 eval, losssum eval : ', loss_multi_speech.data.cpu().numpy(), loss_multi_sum_speech.data.cpu().numpy()
     # loss_multi_speech=loss_multi_speech+0.5*loss_multi_sum_speech
-    print
-    'evaling multi-abs norm this eval batch:', torch.abs(y_multi_map - predict_multi_map).norm().data.cpu().numpy()
+    print 'evaling multi-abs norm this eval batch:', torch.abs(y_multi_map - predict_multi_map).norm().data.cpu().numpy()
     # loss_multi_speech=loss_multi_speech+3*loss_multi_sum_speech
-    print
-    'loss for whole separation part:', loss_multi_speech.data.cpu().numpy()
+    print 'loss for whole separation part:', loss_multi_speech.data.cpu().numpy()
     # return F.relu(loss_multi_speech)
     return loss_multi_speech
 
@@ -131,12 +130,10 @@ def dis_loss(config, top_k_num, dis_model, x_input_map_multi, multi_mask, y_mult
     acc_true = torch.sum(score_true > 0.5).data.cpu().numpy() / float(score_true.size()[0])
     acc_false = torch.sum(score_false < 0.5).data.cpu().numpy() / float(score_true.size()[0])
     acc_dis = (acc_false + acc_true) / 2
-    print
-    'acc for dis:(ture,false,aver)', acc_true, acc_false, acc_dis
+    print 'acc for dis:(ture,false,aver)', acc_true, acc_false, acc_dis
 
     loss_dis_true = loss_multi_func(score_true, Variable(torch.ones(config.batch_size * top_k_num, 1)).cuda())
     loss_dis_false = loss_multi_func(score_false, Variable(torch.zeros(config.batch_size * top_k_num, 1)).cuda())
     loss_dis = loss_dis_true + loss_dis_false
-    print
-    'loss for dis:(ture,false)', loss_dis_true.data.cpu().numpy(), loss_dis_false.data.cpu().numpy()
+    print 'loss for dis:(ture,false)', loss_dis_true.data.cpu().numpy(), loss_dis_false.data.cpu().numpy()
     return loss_dis

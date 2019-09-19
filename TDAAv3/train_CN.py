@@ -19,17 +19,20 @@ from predata_CN import prepare_data  # 数据准备的模块
 # from predata_CN_aim import prepare_data as prepare_data_aim # 测试阶段随便一段语音的数据准备脚本
 import bss_test  # 语音分离性能评测脚本
 import lera
+from tensorboardX import SummaryWriter
+
 
 # config
 parser = argparse.ArgumentParser(description='train_CN.py')
 
 parser.add_argument('-config', default='config_CN.yaml', type=str,
                     help="config file")
-parser.add_argument('-gpus', default=range(8), nargs='+', type=int,
+parser.add_argument('-gpus', default=range(4), nargs='+', type=int,
 # parser.add_argument('-gpus', default=[0], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
 # parser.add_argument('-restore', default='../TDAAv2_CN/sscn_v01b_186001.pt', type=str,
-parser.add_argument('-restore', default=None, type=str,
+parser.add_argument('-restore', default='TDAAv3_3001.pt', type=str,
+# parser.add_argument('-restore', default=None, type=str,
                     help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
                     help="Random seed")
@@ -42,6 +45,9 @@ parser.add_argument('-notrain', default=0, type=bool,
 parser.add_argument('-log', default='', type=str,
                     help="log directory")
 parser.add_argument('-memory', default=False, type=bool,
+                    help="memory efficiency")
+parser.add_argument('-score_fc', default='arc_margin', type=str,
+# parser.add_argument('-score_fc', default='', type=str,
                     help="memory efficiency")
 parser.add_argument('-label_dict_file', default='./data/data/rcv1.json', type=str,
                     help="label_dict")
@@ -89,7 +95,7 @@ print('loading the global setting cost: %.3f' % (time.time() - start_time))
 # model
 print('building model...\n')
 # 调了model.seq2seq 并且运行了最后这个括号里的五个参数的方法。(初始化了一个对象也就是）
-model = getattr(models, opt.model)(config, speech_fre, mix_speech_len, num_labels, use_cuda)
+model = getattr(models, opt.model)(config, speech_fre, mix_speech_len, num_labels, use_cuda, None, opt.score_fc)
 
 if opt.restore:
     model.load_state_dict(checkpoints['model'])
@@ -124,6 +130,9 @@ else:
     log_path = config.log + opt.log + '/'
 if not os.path.exists(log_path):
     os.mkdir(log_path)
+
+writer=SummaryWriter(log_path)
+
 logging = utils.logging(log_path + 'log.txt')  # 单独写一个logging的函数，直接调用，既print，又记录到Log文件里。
 logging_csv = utils.logging_csv(log_path + 'record.csv')
 for k, v in config.items():
@@ -148,8 +157,8 @@ scores = collections.OrderedDict(zip(config.metric, scores))
 best_SDR = 0.0
 
 # train
-lera.log_hyperparams({
-    'title': unicode('SS CN v0.2a'),
+global_par_dict={
+    'title': unicode('SS CN v0.3b'),
     'updates': updates,
     'batch_size': config.batch_size,
     'WFM': config.WFM,
@@ -160,7 +169,10 @@ lera.log_hyperparams({
     'cnn': config.speech_cnn_net,  # 是否采用CNN的结构来抽取
     'relitu': config.relitu,
     'ct_recu': config.ct_recu,  # 控制是否采用att递减的ct构成
-})
+}
+lera.log_hyperparams(global_par_dict)
+for item in global_par_dict.keys():
+    writer.add_text( item, str(global_par_dict[item]))
 
 
 def train(epoch):
@@ -182,6 +194,7 @@ def train(epoch):
 
     train_data_gen = prepare_data('once', 'train')
     while True:
+        print '\n'
         train_data = train_data_gen.next()
         if train_data == False:
             print('SDR_aver_epoch:', SDR_SUM.mean())
@@ -208,7 +221,6 @@ def train(epoch):
             feas_tgt = feas_tgt.cuda()
 
         model.zero_grad()
-        # optim.optimizer.zero_grad()
 
         # aim_list 就是找到有正经说话人的地方的标号
         aim_list = (tgt[1:-1].transpose(0, 1).contiguous().view(-1) != dict_spk2idx['<EOS>']).nonzero().squeeze()
@@ -216,13 +228,14 @@ def train(epoch):
 
         outputs, targets, multi_mask = model(src, src_len, tgt, tgt_len,
                                              dict_spk2idx)  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
-        print('mask size:', multi_mask.size())
+        # print('mask size:', multi_mask.size())
 
         if 1 and len(opt.gpus) > 1:
             sgm_loss, num_total, num_correct = model.module.compute_loss(outputs, targets, opt.memory)
         else:
             sgm_loss, num_total, num_correct = model.compute_loss(outputs, targets, opt.memory)
-        print('loss for SGM,this batch:', sgm_loss.data[0] / num_total)
+        print('loss for SGM,this batch:', sgm_loss.cpu().item())
+        writer.add_scalars('scalar/loss',{'sgm_loss':sgm_loss.cpu().item()},updates)
 
         src = src.transpose(0, 1)
         # expand the raw mixed-features to topk_max channel.
@@ -237,37 +250,34 @@ def train(epoch):
             ss_loss = model.module.separation_loss(x_input_map_multi, multi_mask, feas_tgt)
         else:
             ss_loss = model.separation_loss(x_input_map_multi, multi_mask, feas_tgt)
-        print('loss for SS,this batch:', ss_loss.data[0] / num_total)
+        print('loss for SS,this batch:', ss_loss.cpu().item())
+        writer.add_scalars('scalar/loss',{'ss_loss':ss_loss.cpu().item()},updates)
 
 
         loss = sgm_loss + 5 * ss_loss
 
         loss.backward()
         # print 'totallllllllllll loss:',loss
-        total_loss_sgm += sgm_loss.data[0]
-        total_loss_ss += ss_loss.data[0]
+        total_loss_sgm += sgm_loss.cpu().item()
+        total_loss_ss += ss_loss.cpu().item()
         lera.log({
-            'sgm_loss': sgm_loss.data[0],
-            'ss_loss': ss_loss.data[0],
-            'loss:': loss.data[0],
+            'sgm_loss': sgm_loss.cpu().item(),
+            'ss_loss': ss_loss.cpu().item(),
+            'loss:': loss.cpu().item(),
         })
 
-        if epoch>5 and (updates % config.eval_interval) in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]:
+        if updates % config.eval_interval in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]:
             predicted_maps = multi_mask * x_input_map_multi
             # predicted_maps=Variable(feas_tgt)
-            utils.bss_eval(config, predicted_maps, train_data['multi_spk_fea_list'], raw_tgt, train_data,
-                           dst='batch_output')
+            utils.bss_eval(config, predicted_maps, train_data['multi_spk_fea_list'], raw_tgt, train_data, dst='batch_output')
             del predicted_maps, multi_mask, x_input_map_multi
-            # raw_input('wait to continue......')
-            try:
-                sdr_aver_batch= np.append(SDR_SUM, bss_test.cal('batch_output/'))
-            except AssertionError,wrong_info:
-                print 'Errors in calculating the SDR',wrong_info
+            sdr_aver_batch=  bss_test.cal('batch_output/')
             lera.log({'SDR sample': sdr_aver_batch})
+            writer.add_scalars('scalar/loss',{'SDR_sample':sdr_aver_batch},updates)
             SDR_SUM = np.append(SDR_SUM, sdr_aver_batch)
             print('SDR_aver_now:', SDR_SUM.mean())
 
-        total_loss += loss.data[0]
+        total_loss += loss.cpu().item()
         report_total += num_total
         optim.step()
 
@@ -281,11 +291,15 @@ def train(epoch):
 
         # continue
 
-        if 0 or updates % config.eval_interval == 0 and epoch > 1:
+        if 0 and updates % config.eval_interval == 0 and epoch > 3: #建议至少跑几个epoch再进行测试，否则模型还没学到东西，会有很多问题。
             logging("time: %6.3f, epoch: %3d, updates: %8d, train loss: %6.5f\n"
                     % (time.time() - start_time, epoch, updates, total_loss / report_total))
             print('evaluating after %d updates...\r' % updates)
-            # score = eval(epoch)
+            original_bs=config.batch_size
+            score = eval(epoch) # eval的时候batch_size会变成1
+            print 'Orignal bs:',original_bs
+            config.batch_size=original_bs
+            print 'Now bs:',config.batch_size
             for metric in config.metric:
                 scores[metric].append(score[metric])
                 lera.log({
@@ -306,8 +320,9 @@ def train(epoch):
 
 
 def eval(epoch):
+    config.batch_size=1
     model.eval()
-    print 'please set the batch_size as 1'
+    print '\n\n测试的时候请设置config里的batch_size为1！！！please set the batch_size as 1'
     reference, candidate, source, alignments = [], [], [], []
     e = epoch
     test_or_valid = 'test'
@@ -364,7 +379,9 @@ def eval(epoch):
         src = src.transpose(0, 1)
         siz = src.size()
         assert len(siz) == 3
-        assert samples[0][-1] == dict_spk2idx['<EOS>']
+        # if samples[0][-1] != dict_spk2idx['<EOS>']:
+        #     print '*'*40+'\nThe model is far from good. End the evaluation.\n'+'*'*40
+        #     break
         topk_max = len(samples[0]) - 1
         x_input_map_multi = torch.unsqueeze(src, 1).expand(siz[0], topk_max, siz[1], siz[2])
         if config.WFM:
@@ -375,9 +392,9 @@ def eval(epoch):
                 ss_loss = model.module.separation_loss(x_input_map_multi, predicted_masks, feas_tgt, Var)
             else:
                 ss_loss = model.separation_loss(x_input_map_multi, predicted_masks, feas_tgt)
-            print('loss for ss,this batch:', ss_loss.data[0])
+            print('loss for ss,this batch:', ss_loss.cpu().item())
             lera.log({
-                'ss_loss_' + test_or_valid: ss_loss.data[0],
+                'ss_loss_' + test_or_valid: ss_loss.cpu().item(),
             })
             del ss_loss, hiddens
 
