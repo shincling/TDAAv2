@@ -52,7 +52,7 @@ def cal(path):
             if l.split('_')[0]==str(idx):
                 if 'True_mix' in l:
                     mix_speech.append(sf.read(path+l)[0])
-                if 'real' in l:
+                if 'real' in l and 'noise' not in l:
                     aim_speech_channel.append(sf.read(path+l)[0])
                 if 'pre' in l:
                     pre_speech_channel.append(sf.read(path+l)[0])
