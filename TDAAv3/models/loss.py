@@ -55,20 +55,23 @@ def memory_efficiency_cross_entropy_loss(hidden_outputs, decoder, targets, crite
 
 def cross_entropy_loss(hidden_outputs, decoder, targets, criterion, config, sim_score=0):
     # hidden_outputs:[max_len,bs,512]
+    batch_size= targets.size()[1]
     targets=targets.view(-1)
     outputs = hidden_outputs.view(-1, hidden_outputs.size(2))
     scores = decoder.compute_score(outputs,targets.view(-1))
     loss = criterion(scores, targets.view(-1)) + sim_score
     pred = scores.max(1)[1]
     num_correct = pred.data.eq(targets.data).masked_select(targets.ne(dict.PAD).data).sum()
+    # num_correct = pred.data.eq(targets.data).masked_select(targets.ne(targets[-1]).data).sum()
     num_total = targets.ne(dict.PAD).data.sum().float()
-    loss = loss.div(num_total)
+    loss *= batch_size
+    loss = loss.div(num_total) #不能再除一次跟batch_size相关的的东西了
     # loss = loss.data[0]
 
     return loss, num_total, num_correct
 
 
-def ss_loss(config, x_input_map_multi, multi_mask, y_multi_map, loss_multi_func):
+def ss_loss(config, x_input_map_multi, multi_mask, y_multi_map, loss_multi_func,wav_loss):
     predict_multi_map = multi_mask * x_input_map_multi
     # predict_multi_map=Variable(y_multi_map)
     y_multi_map = Variable(y_multi_map)
