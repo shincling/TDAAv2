@@ -1,10 +1,11 @@
 data:  './data/data/save_data'
 log:  './data/data/log/'
 epoch:  300 #epoch总数
-batch_size: 12
+batch_size: 10
 param_init:  0.1
 optim:  'adam'
 loss: 'focal_loss'
+#loss: 'cross_entropy'
 learning_rate:  0.001
 max_grad_norm:  10
 learning_rate_decay:  0.5
@@ -17,7 +18,7 @@ emb_size:  256 #decoder部分的说话人的初始化emb
 encoder_hidden_size:  256
 decoder_hidden_size:  512
 num_layers:  2
-dropout:  0.5
+dropout:  0
 max_tgt_len:  5
 eval_interval:  800
 save_interval:  3000
@@ -37,6 +38,7 @@ SPK_EMB_SIZE: 256 #注意这个东西需要和上面的spk_emb（如果是global
 
 #global_emb:  0
 #SPK_EMB_SIZE : 512 #注意这个东西需要和上面的spk_emb（如果是global_emb的话）,否认则就跟decoder的hidden_size对应
+#hidden_mix: 0 #这个模式是不采用global emb的时候，把hidden和下一步的embeding一起cat起来作为ss的输入进去。
 
 #hidden_mix: 0 #这个模式是不采用global emb的时候，把hidden和下一步的embeding一起cat起来作为ss的输入进去。
 #hidden_mix: 1 #这个模式是不采用global emb的时候，把hidden和下一步的embeding一起cat起来作为ss的输入进去。

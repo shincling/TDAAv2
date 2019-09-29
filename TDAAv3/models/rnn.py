@@ -182,7 +182,7 @@ class rnn_decoder(nn.Module):
             outputs = torch.stack(outputs)
             global_embs = torch.stack(global_embs)
             attns = torch.stack(attns)
-            return outputs, state, global_embs
+            return outputs, state, global_embs, gamma
 
     def compute_score(self, hiddens,targets):
         if self.score_fn.startswith('general'):
@@ -252,7 +252,7 @@ class rnn_decoder(nn.Module):
         hidden, attn_weigths = self.attention(output, contexts)
         if self.config.schmidt:
             hidden = models.schmidt(hidden, tmp_hiddens)
-        output = self.compute_score(hidden)
+        output = self.compute_score(hidden,targets=None)
         if self.config.mask:
             if mask is not None:
                 output = output.scatter_(1, mask, -9999999999)

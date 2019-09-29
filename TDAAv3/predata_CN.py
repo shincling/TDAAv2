@@ -31,12 +31,12 @@ np.random.seed(1)  # 设定种子
 random.seed(1)
 
 # 存放数据的位置，需要改动一下，这个是在70上的路径
-aim_path = '/data3/data_aishell/wav/'  # 400 in total
-noise_path = '/data3/noise/'
+# aim_path = '/data3/data_aishell/wav/'  # 400 in total
+# noise_path = '/data3/noise/'
 
 
-# aim_path = '../../../data_aishell/wav/'  # 400 in total
-# noise_path = '../../../noise/'
+aim_path = '../../../data_aishell/wav/'  # 400 in total
+noise_path = '../../../noise/'
 
 
 def split_forTrainDevTest(given_list, train_or_test, phase):
@@ -115,6 +115,8 @@ def prepare_data(mode, train_or_test, min=None, max=None, add_noise_ratio=0.5):
      其中把每个文件夹每个人的按文件名的排序的前72%作为训练，18%作为valid (overlapped)，最后10%作为测试(unknonw spks)
     :return: generator of dataset.
     '''
+    # if train_or_test=='test':
+    #     config.batch_size=1
     # 如错有预订的min和max，主要是为了主程序做valid的时候统一某个固定的说话人的个数上
     if min:
         config.MIN_MIX = min

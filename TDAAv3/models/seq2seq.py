@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 # import data.dict as dict
 import models
-from figure_hot import relitu_line
+# from figure_hot import relitu_line
 
 import numpy as np
 
@@ -32,6 +32,7 @@ class seq2seq(nn.Module):
         self.criterion = models.criterion(tgt_vocab_size, use_cuda,config.loss)
         self.loss_for_ss = nn.MSELoss()
         self.log_softmax = nn.LogSoftmax()
+        self.wav_loss = models.WaveLoss(dBscale=1, nfft=config.FRAME_LENGTH, hop_size=config.FRAME_SHIFT)
 
         speech_fre = input_emb_size
         num_labels = tgt_vocab_size
@@ -46,7 +47,7 @@ class seq2seq(nn.Module):
 
     def separation_loss(self, x_input_map_multi, masks, y_multi_map, Var='NoItem'):
         if not self.config.MLMSE:
-            return models.ss_loss(self.config, x_input_map_multi, masks, y_multi_map, self.loss_for_ss)
+            return models.ss_loss(self.config, x_input_map_multi, masks, y_multi_map, self.loss_for_ss,self.wav_loss)
         else:
             return models.ss_loss_MLMSE(self.config, x_input_map_multi, masks, y_multi_map, self.loss_for_ss, Var)
 
@@ -68,20 +69,21 @@ class seq2seq(nn.Module):
         src = src.transpose(0, 1)
         contexts, state = self.encoder(src, lengths.data.tolist())  # context是：（max_len,batch_size,hidden_size×2方向）这么大
         if not self.config.global_emb:
-            outputs, final_state, embs = self.decoder(tgt[:-1], state, contexts.transpose(0, 1))
+            # outputs, final_state, embs = self.decoder(tgt[:-1], state, contexts.transpose(0, 1))
+            outputs, final_state, embs = self.decoder(tgt, state, contexts.transpose(0, 1))
             # 这里的outputs就是没个step输出的隐层向量,大小是len+1,bs,emb（注意是第一个词到 EOS的总共）
             if not self.config.hidden_mix:
-                predicted_maps = self.ss_model(src, outputs[:-1, :], tgt[1:-1])
+                predicted_maps = self.ss_model(src, outputs[:-1, :], tgt[1:-1],dict_spk2idx)
             else:
                 mix = torch.cat((outputs[:-1, :], embs[1:]), dim=2)
                 predicted_maps = self.ss_model(src, mix, tgt[1:-1])
 
         else:
-            outputs, final_state, global_embs = self.decoder(tgt, state, contexts.transpose(0, 1))
+            outputs, final_state, global_embs, gamma = self.decoder(tgt, state, contexts.transpose(0, 1))
             # 这里的outputs就是没个step输出的隐层向量,大小是len+1,bs,emb（注意是第一个词到 EOS的总共）
             predicted_maps = self.ss_model(src, global_embs, tgt[1:-1], dict_spk2idx)
 
-        return outputs, tgt[1:], predicted_maps.transpose(0, 1)
+        return outputs, tgt[1:], predicted_maps.transpose(0, 1),gamma
 
     def sample(self, src, src_len):
         # src=src.squeeze()
