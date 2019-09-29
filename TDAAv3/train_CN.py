@@ -186,6 +186,7 @@ def train(epoch):
     e = epoch
     model.train()
     SDR_SUM = np.array([])
+    SDRi_SUM = np.array([])
 
     if config.schedule and scheduler.get_lr()[0]>5e-5:
         scheduler.step()
@@ -205,6 +206,7 @@ def train(epoch):
         train_data = train_data_gen.next()
         if train_data == False:
             print('SDR_aver_epoch:', SDR_SUM.mean())
+            print('SDRi_aver_epoch:', SDRi_SUM.mean())
             break  # 如果这个epoch的生成器没有数据了，直接进入下一个epoch
 
         src = Variable(torch.from_numpy(train_data['mix_feas']))
@@ -279,11 +281,14 @@ def train(epoch):
             # predicted_maps=Variable(feas_tgt)
             utils.bss_eval(config, predicted_maps, train_data['multi_spk_fea_list'], raw_tgt, train_data, dst='batch_output')
             del predicted_maps, multi_mask, x_input_map_multi
-            sdr_aver_batch=  bss_test.cal('batch_output/')
+            sdr_aver_batch, sdri_aver_batch=  bss_test.cal('batch_output/')
             lera.log({'SDR sample': sdr_aver_batch})
-            writer.add_scalars('scalar/loss',{'SDR_sample':sdr_aver_batch},updates)
+            lera.log({'SDRi sample': sdri_aver_batch})
+            writer.add_scalars('scalar/loss',{'SDR_sample':sdr_aver_batch,'SDRi_sample':sdri_aver_batch},updates)
             SDR_SUM = np.append(SDR_SUM, sdr_aver_batch)
+            SDRi_SUM = np.append(SDRi_SUM, sdri_aver_batch)
             print('SDR_aver_now:', SDR_SUM.mean())
+            print('SDRi_aver_now:', SDRi_SUM.mean())
 
         total_loss += loss.cpu().item()
         report_correct += num_correct.cpu().item()
@@ -341,6 +346,7 @@ def eval(epoch):
     print('Test or valid:', test_or_valid)
     eval_data_gen = prepare_data('once', test_or_valid, config.MIN_MIX, config.MAX_MIX)
     SDR_SUM = np.array([])
+    SDRi_SUM = np.array([])
     batch_idx = 0
     global best_SDR, Var
     while True:
@@ -348,6 +354,7 @@ def eval(epoch):
         eval_data = eval_data_gen.next()
         if eval_data == False:
             print('SDR_aver_eval_epoch:', SDR_SUM.mean())
+            print('SDRi_aver_eval_epoch:', SDRi_SUM.mean())
             break  # 如果这个epoch的生成器没有数据了，直接进入下一个epoch
         src = Variable(torch.from_numpy(eval_data['mix_feas']))
 
@@ -418,11 +425,13 @@ def eval(epoch):
                             dst='batch_output')
             del predicted_maps, predicted_masks, x_input_map_multi
             try:
-                SDR_SUM = np.append(SDR_SUM, bss_test.cal('batch_output/'))
+                SDR_SUM,SDRi_SUM = np.append(SDR_SUM, bss_test.cal('batch_output/'))
             except AssertionError,wrong_info:
                 print 'Errors in calculating the SDR',wrong_info
             print('SDR_aver_now:', SDR_SUM.mean())
-            lera.log({'SDR sample': SDR_SUM.mean()})
+            print('SDRi_aver_now:', SDRi_SUM.mean())
+            lera.log({'SDR sample'+test_or_valid: SDR_SUM.mean()})
+            lera.log({'SDRi sample'+test_or_valid: SDRi_SUM.mean()})
             # raw_input('Press any key to continue......')
         elif batch_idx == (500 / config.batch_size) + 1 and SDR_SUM.mean() > best_SDR:  # only record the best SDR once.
             print('Best SDR from {}---->{}'.format(best_SDR, SDR_SUM.mean()))
