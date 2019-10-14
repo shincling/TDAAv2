@@ -40,7 +40,7 @@ def save_datas(data, filename, trans_to_str=False):
 
 def logging(file):
     def write_log(s):
-        print s, ''
+        print(s, '')
         with open(file, 'a') as f:
             f.write(s)
 

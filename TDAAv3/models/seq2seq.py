@@ -36,7 +36,10 @@ class seq2seq(nn.Module):
 
         speech_fre = input_emb_size
         num_labels = tgt_vocab_size
-        self.ss_model = models.SS(config, speech_fre, mix_speech_len, num_labels)
+        if config.use_tas:
+            self.ss_model = models.ConvTasNet()
+        else:
+            self.ss_model = models.SS(config, speech_fre, mix_speech_len, num_labels)
 
     def compute_loss(self, hidden_outputs, targets, memory_efficiency):
         if memory_efficiency:
@@ -51,6 +54,9 @@ class seq2seq(nn.Module):
         else:
             return models.ss_loss_MLMSE(self.config, x_input_map_multi, masks, y_multi_map, self.loss_for_ss, Var)
 
+    def separation_tas_loss(self, x_input_wav_multi, masks, y_multi_wav):
+        return models.ss_tas_loss(self.config, x_input_wav_multi, masks, y_multi_wav, self.loss_for_ss,self.wav_loss)
+
     def update_var(self, x_input_map_multi, multi_masks, y_multi_map):
         predict_multi_map = torch.mean(multi_masks * x_input_map_multi, -2)  # 在时间维度上平均
         y_multi_map = torch.mean(Variable(y_multi_map), -2)  # 在时间维度上平均
@@ -59,7 +65,7 @@ class seq2seq(nn.Module):
         Var = torch.mean(Var, 0)  # 在batch的维度上平均
         return Var.detach()
 
-    def forward(self, src, src_len, tgt, tgt_len, dict_spk2idx):
+    def forward(self, src, src_len, tgt, tgt_len, dict_spk2idx,mix_wav=None):
         # 感觉这是个把一个batch里的数据按从长到短调整顺序的意思
         lengths, indices = torch.sort(src_len.squeeze(0), dim=0, descending=True)
         # todo: 这里只要一用排序，tgt那个就出问题，现在的长度都一样，所以没有排序也可以工作，这个得好好研究一下后面
@@ -81,7 +87,10 @@ class seq2seq(nn.Module):
         else:
             outputs, final_state, global_embs, gamma = self.decoder(tgt, state, contexts.transpose(0, 1))
             # 这里的outputs就是没个step输出的隐层向量,大小是len+1,bs,emb（注意是第一个词到 EOS的总共）
-            predicted_maps = self.ss_model(src, global_embs, tgt[1:-1], dict_spk2idx)
+            if self.config.use_tas:
+                predicted_maps = self.ss_model(mix_wav, global_embs)
+            else:
+                predicted_maps = self.ss_model(src, global_embs, tgt[1:-1], dict_spk2idx)
 
         return outputs, tgt[1:], predicted_maps.transpose(0, 1),gamma
 

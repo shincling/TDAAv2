@@ -164,11 +164,14 @@ class rnn_decoder(nn.Module):
             a, b = self.embedding.weight.size()
 
             for i in range(max_time_step - 1):
-                emb1 = torch.bmm(soft_score.unsqueeze(1),
-                                 self.embedding.weight.expand((batch_size, a, b)))  # 对vocab上所有emb按得分的加权平均
-                emb2 = embs[i + 1]  # 下一步的输入词语的emb
-                gamma = F.sigmoid(self.gated1(emb1.squeeze()) + self.gated2(emb2.squeeze()))  # 对应文中13式子
-                emb = gamma * emb1.squeeze() + (1 - gamma) * emb2.squeeze()
+                emb1 = torch.bmm(soft_score.unsqueeze(1), self.embedding.weight.expand((batch_size, a, b)))  # 对vocab上所有emb按得分的加权平均
+                if not self.config.all_soft:
+                    emb2 = embs[i + 1]  # 下一步的输入词语的emb
+                    gamma = F.sigmoid(self.gated1(emb1.squeeze()) + self.gated2(emb2.squeeze()))  # 对应文中13式子
+                    emb = gamma * emb1.squeeze() + (1 - gamma) * emb2.squeeze()
+                else:
+                    gamma = torch.ones((3,100)).cuda() #随便给一个
+                    emb = emb1.squeeze()
                 global_embs += [emb]  # 注意这个global和上面的错一个step，相当与emb的第一个就是目标输出了之后的结果，跟上面那种Outputs保持一致
                 output, state = self.rnn(emb, state)
                 output, attn_weights = self.attention(output, contexts)
@@ -243,9 +246,12 @@ class rnn_decoder(nn.Module):
                 emb = self.embedding(input)
             else:
                 emb1 = torch.bmm(soft_score.unsqueeze(1), self.embedding.weight.expand((batch_size, a, b)))
-                emb2 = self.embedding(input)
-                gamma = F.sigmoid(self.gated1(emb1.squeeze()) + self.gated2(emb2.squeeze()))
-                emb = gamma * emb1.squeeze() + (1 - gamma) * emb2.squeeze()
+                if not self.config.all_soft:
+                    emb2 = self.embedding(input)
+                    gamma = F.sigmoid(self.gated1(emb1.squeeze()) + self.gated2(emb2.squeeze()))
+                    emb = gamma * emb1.squeeze() + (1 - gamma) * emb2.squeeze()
+                else:
+                    emb = emb1.squeeze()
         else:
             emb = self.embedding(input)
         output, state = self.rnn(emb, state)
