@@ -11,7 +11,7 @@ import data.utils as utils
 
 # Add the config.
 parser = argparse.ArgumentParser(description='predata scripts.')
-parser.add_argument('-config', default='config.yaml', type=str,
+parser.add_argument('-config', default='config_WSJ0.yaml', type=str,
                     # parser.add_argument('-config', default='config_mix.yaml', type=str,
                     help="config file")
 opt = parser.parse_args()
@@ -21,7 +21,7 @@ channel_first = config.channel_first
 np.random.seed(1)  # 设定种子
 random.seed(1)
 
-aim_path = '../../DL4SS_Keras/Torch_multi/Dataset_Multi/1/' + config.DATASET
+aim_path = '../../../DL4SS_Keras/Torch_multi/Dataset_Multi/1/' + config.DATASET
 # 训练文件列表
 TRAIN_LIST = aim_path + '/train_list'
 # 验证文件列表
@@ -31,6 +31,39 @@ TEST_LIST = aim_path + '/test_list'
 # 未登录文件列表
 UNK_LIST = aim_path + '/unk_list'
 
+
+def pad_list(xs, pad_value):
+    n_batch = len(xs)
+    max_len = max(x.size(0) for x in xs)
+    pad = xs[0].new(n_batch, max_len, * xs[0].size()[1:]).fill_(pad_value)
+    for i in range(n_batch):
+        pad[i, :xs[i].size(0)] = xs[i]
+    return pad
+
+def _collate_fn(mix_data,source_data):
+    """
+    Args:
+        batch: list, len(batch) = 1. See AudioDataset.__getitem__()
+Returns:
+        mixtures_pad: B x T, torch.Tensor
+        ilens : B, torch.Tentor
+        sources_pad: B x C x T, torch.Tensor
+    """
+    mixtures, sources = mix_data,source_data
+    sources = np.stack([np.stack(i.values()) for i in source_data])
+
+    # get batch of lengths of input sequences
+    ilens = np.array([mix.shape[0] for mix in mixtures])
+
+    # perform padding and convert to tensor
+    pad_value = 0
+    # mixtures_pad = pad_list([mix.float() for mix in mixtures], pad_value)
+    ilens = ilens
+    # sources_pad = pad_list([torch.from_numpy(s).float() for s in sources], pad_value)
+    # N x T x C -> N x C x T
+    # sources_pad = sources_pad.permute((0, 2, 1)).contiguous()
+    return mixtures, ilens, sources
+    # return mixtures_pad, ilens, sources_pad
 
 def split_forTrainDevTest(spk_list, train_or_test):
     '''为了保证一个统一的训练和测试的划分标准，不得不用通用的一些方法来限定一下,
@@ -56,8 +89,7 @@ def prepare_datasize(gen):
     # 此处顺序是 mix_speechs.shape,mix_feas.shape,aim_fea.shape,aim_spkid.shape,query.shape
     # 一个例子：(5, 17040) (5, 134, 129) (5, 134, 129) (5,) (5, 32, 400, 300, 3)
     # 暂时输出的是：语音长度、语音频率数量、视频截断之后的长度
-    print
-    'datasize:', data[1].shape[1], data[1].shape[2], data[4].shape[1], data[-1], (data[4].shape[2], data[4].shape[3])
+    print('datasize:', data[1].shape[1], data[1].shape[2], data[4].shape[1], data[-1], (data[4].shape[2], data[4].shape[3]))
     return data[1].shape[1], data[1].shape[2], data[4].shape[1], data[-1], (data[4].shape[2], data[4].shape[3])
 
 
@@ -99,7 +131,7 @@ def prepare_data(mode, train_or_test, min=None, max=None):
             all_spk = all_spk_train + all_spk_eval + all_spk_test
             spk_samples_list = {}
             batch_idx = 0
-            list_path = '../../DL4SS_Keras/TDAA_beta/create-speaker-mixtures/'
+            list_path = '../../../DL4SS_Keras/TDAA_beta/create-speaker-mixtures/'
             all_samples_list = {}
             sample_idx = {}
             number_samples = {}
@@ -123,35 +155,28 @@ def prepare_data(mode, train_or_test, min=None, max=None):
 
                 if train_or_test == 'train' and config.SHUFFLE_BATCH:
                     random.shuffle(all_samples_list[mix_k])
-                    print
-                    '\nshuffle success!', all_samples_list[mix_k][0]
+                    print('shuffle success!', all_samples_list[mix_k][0])
 
             batch_total = number_samples_all / config.batch_size
-            print
-            'batch_total_num:', batch_total
+            print('batch_total_num:', batch_total)
 
             mix_k = random.sample(mix_number_list, 1)[0]
             # while True:
             for ___ in range(number_samples_all):
                 if ___ == number_samples_all - 1:
-                    print
-                    'ends here.___'
+                    print('ends here.___')
                     yield False
                 mix_len = 0
-                print
-                mix_k, 'mixed sample_idx[mix_k]:', sample_idx[mix_k], batch_idx
+                print(mix_k, 'mixed sample_idx[mix_k]:', sample_idx[mix_k], batch_idx)
                 if sample_idx[mix_k] >= batch_mix[mix_k] * config.batch_size:
-                    print
-                    mix_k, 'mixed data is over~trun to the others number.'
+                    print(mix_k, 'mixed data is over~trun to the others number.')
                     mix_number_list.remove(mix_k)
                     try:
                         mix_k = random.sample(mix_number_list, 1)[0]
                     except ValueError:
-                        print
-                        'seems there gets all over.'
+                        print('seems there gets all over.')
                         if len(mix_number_list) == 0:
-                            print
-                            'all mix number is over~!'
+                            print('all mix number is over~!')
                         yield False
                     # mix_k=random.sample(mix_number_list,1)[0]
                     batch_idx = 0
@@ -169,13 +194,11 @@ def prepare_data(mode, train_or_test, min=None, max=None):
                 all_over = 1  # 用来判断所有的是不是都结束了
                 for kkkkk in mix_number_list:
                     if not sample_idx[kkkkk] >= batch_mix[mix_k] * config.batch_size:
-                        print
-                        kkkkk, 'mixed data is not over'
+                        print(kkkkk, 'mixed data is not over')
                         all_over = 0
                         break
                     if all_over:
-                        print
-                        'all mix number is over~!'
+                        print('all mix number is over~!')
                         yield False
 
                 # mix_k=random.sample(mix_number_list,1)[0]
@@ -189,7 +212,8 @@ def prepare_data(mode, train_or_test, min=None, max=None):
                     aim_spk_k = random.sample(all_spk_evaltest, mix_k)  # 本次混合的候选人
 
                 aim_spk_k = re.findall('/([0-9][0-9].)/', all_samples_list[mix_k][sample_idx[mix_k]])
-                aim_spk_db_k = map(float, re.findall(' (.*?) ', all_samples_list[mix_k][sample_idx[mix_k]]))
+                # aim_spk_db_k = map(float, re.findall(' (.*?) ', all_samples_list[mix_k][sample_idx[mix_k]]))
+                aim_spk_db_k = [float(dd) for dd in re.findall(' (.*?) ', all_samples_list[mix_k][sample_idx[mix_k]])]
                 aim_spk_samplename_k = re.findall('/(.{8})\.wav ', all_samples_list[mix_k][sample_idx[mix_k]])
                 assert len(aim_spk_k) == mix_k == len(aim_spk_db_k) == len(aim_spk_samplename_k)
 
@@ -201,7 +225,6 @@ def prepare_data(mode, train_or_test, min=None, max=None):
                 # if 1 and config.dB and config.MIN_MIX==config.MAX_MIX==2:
                 #     dB_rate=10**(config.dB/20.0*np.random.rand())#e**(0——0.5)
                 #     print 'channel to change with dB:',dB_rate
-
                 for k, spk in enumerate(aim_spk_k):
                     # 选择dB的通道～！
                     sample_name = aim_spk_samplename_k[k]
@@ -277,7 +300,7 @@ def prepare_data(mode, train_or_test, min=None, max=None):
                 mix_phase.append(np.transpose(librosa.core.spectrum.stft(wav_mix, config.FRAME_LENGTH,
                                                                          config.FRAME_SHIFT, )))
                 batch_idx += 1
-                # print 'batch_dix:{}/{},'.format(batch_idx,config.batch_size),
+                # print('batch_dix:{}/{},'.format(batch_idx,config.batch_size),)
                 if batch_idx == config.batch_size:  # 填满了一个batch
                     # 下一个batch的混合说话人个数， 先调整一下
                     mix_k = random.sample(mix_number_list, 1)[0]
@@ -286,12 +309,10 @@ def prepare_data(mode, train_or_test, min=None, max=None):
                     aim_fea = np.array(aim_fea)
                     # aim_spkid=np.array(aim_spkid)
                     query = np.array(query)
-                    print
-                    'spk_list_from_this_gen:{}'.format(aim_spkname)
-                    print
-                    'aim spk list:', [one.keys() for one in multi_spk_fea_list]
-                    # print '\nmix_speechs.shape,mix_feas.shape,aim_fea.shape,aim_spkname.shape,query.shape,all_spk_num:'
-                    # print mix_speechs.shape,mix_feas.shape,aim_fea.shape,len(aim_spkname),query.shape,len(all_spk)
+                    print('spk_list_from_this_gen:{}'.format(aim_spkname))
+                    print('aim spk list:', [one.keys() for one in multi_spk_fea_list])
+                    # print('\nmix_speechs.shape,mix_feas.shape,aim_fea.shape,aim_spkname.shape,query.shape,all_spk_num:'
+                    # print(mix_speechs.shape,mix_feas.shape,aim_fea.shape,len(aim_spkname),query.shape,len(all_spk)
                     if mode == 'global':
                         all_spk = sorted(all_spk)
                         all_spk = sorted(all_spk_train)
@@ -320,7 +341,10 @@ def prepare_data(mode, train_or_test, min=None, max=None):
                                'multi_spk_fea_list': multi_spk_fea_list,
                                'multi_spk_wav_list': multi_spk_wav_list,
                                'batch_total': batch_total,
+                               'tas_zip': _collate_fn(mix_speechs,multi_spk_wav_list)
                                }
+                    elif mode == 'tasnet':
+                        yield _collate_fn(mix_speechs,multi_spk_wav_list)
 
                     batch_idx = 0
                     mix_speechs = np.zeros((config.batch_size, config.MAX_LEN))

@@ -98,7 +98,7 @@ def cal_SISNR(ref_sig, out_sig, eps=1e-8):
 
 def cal(path):
     mix_number=len(set([l.split('_')[0] for l in os.listdir(path) if l[-3:]=='wav']))
-    print 'num of mixed :',mix_number
+    print('num of mixed :',mix_number)
     SDR_sum=np.array([])
     SDRi_sum=np.array([])
     for idx in range(mix_number):
@@ -127,7 +127,7 @@ def cal(path):
         # print pre_speech_channel.shape
 
         result=bss_eval_sources(aim_speech_channel,pre_speech_channel)
-        print result
+        print(result)
         SDR_sum=np.append(SDR_sum,result[0])
 
         # result=bss_eval_sources(aim_speech_channel,aim_speech_channel)
@@ -135,7 +135,7 @@ def cal(path):
         # print 'SDRi:',result_sdri
         # SDRi_sum=np.append(SDRi_sum,result_sdri)
 
-    print 'SDR_Aver for this batch:',SDR_sum.mean()
+    print('SDR_Aver for this batch:',SDR_sum.mean())
     # print 'SDRi_Aver for this batch:',SDRi_sum.mean()
     return SDR_sum.mean(),SDRi_sum.mean()
 

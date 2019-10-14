@@ -54,7 +54,7 @@ class rnn_encoder(nn.Module):
 
     def forward(self, input, lengths):
         input = input.transpose(0, 1)
-        embs = pack(input, map(int, lengths))  # 这里batch是第二个维度
+        embs = pack(input, list(map(int, lengths)))  # 这里batch是第二个维度
         outputs, (h, c) = self.rnn(embs)
         outputs = unpack(outputs)[0]
         if not self.config.bidirec:
