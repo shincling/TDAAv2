@@ -25,7 +25,7 @@ shared_vocab:  0
 WFM: 0
 MLMSE: 0
 beam_size:  5
-top1: 0 #控制是否用top-1的方法来生产第二个通道
+top1: 1 #控制是否用top-1的方法来生产第二个通道
 ct_recu: 0 #控制是否采用att递减的ct构成
 global_emb:  1
 SPK_EMB_SIZE : 256 #注意这个东西需要和上面的spk_emb（如果是global_emb的话）,否认则就跟decoder的hidden_size对应

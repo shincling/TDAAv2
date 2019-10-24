@@ -347,6 +347,7 @@ def eval(epoch):
     reference, candidate, source, alignments = [], [], [], []
     e=epoch
     test_or_valid='valid'
+    test_or_valid='test'
     print 'Test or valid:',test_or_valid
     eval_data_gen=prepare_data('once',test_or_valid,config.MIN_MIX,config.MAX_MIX)
     # for raw_src, src, src_len, raw_tgt, tgt, tgt_len in validloader:

@@ -191,15 +191,15 @@ class MIX_SPEECH(nn.Module):
 
     def forward(self,x):
         x,hidden=self.layer(x)
-        batch_size=x.size()[0]
+        batch_size,speech_len=x.size()[0],x.size()[1]
         x=x.contiguous()
         xx=x
-        x=x.view(batch_size*self.mix_speech_len,-1)
+        x=x.view(batch_size*speech_len,-1)
         # out=F.tanh(self.Linear(x))
         out=self.Linear(x)
         out=F.tanh(out)
         # out=F.relu(out)
-        out=out.view(batch_size,self.mix_speech_len,self.input_fre,-1)
+        out=out.view(batch_size,speech_len,self.input_fre,-1)
         # print 'Mix speech output shape:',out.size()
         return out,xx
 
@@ -284,6 +284,8 @@ class SS(nn.Module):
         config=self.config
         top_k_num,batch_size=targets.size()
         batch_size=mix_feas.size(0)
+        speech_len=mix_feas.size(1)
+        self.mix_speech_len=speech_len
         mix_speech_hidden,mix_tmp_hidden=self.mix_hidden_layer_3d(mix_feas)
         mix_speech_multiEmbs=torch.transpose(hidden_outputs,0,1).contiguous()# bs*num_labels（最多混合人个数）×Embedding的大小
         if self.config.is_SelfTune:

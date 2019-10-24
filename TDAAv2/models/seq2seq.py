@@ -33,8 +33,8 @@ class seq2seq(nn.Module):
 
         speech_fre=input_emb_size
         num_labels=tgt_vocab_size
-        # self.ss_model=models.SS(config, speech_fre, mix_speech_len, num_labels)
-        self.ss_model=models.SS(config, speech_fre, config.buffer_shift+config.buffer_size, num_labels)
+        self.ss_model=models.SS(config, speech_fre, mix_speech_len, num_labels)
+        # self.ss_model=models.SS(config, speech_fre, config.buffer_shift+config.buffer_size, num_labels)
 
     def compute_loss(self, hidden_outputs, targets, memory_efficiency):
         if memory_efficiency:
