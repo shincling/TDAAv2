@@ -1,12 +1,12 @@
 data:  './data/data/save_data'
 log:  './data/data/log/'
 epoch:  300 #epoch总数
-batch_size: 10
+batch_size: 3
 param_init:  0.1
 optim:  'adam'
 loss: 'focal_loss'
 #loss: 'cross_entropy'
-learning_rate:  0.001
+learning_rate:  0.00004
 max_grad_norm:  10
 learning_rate_decay:  0.5
 
@@ -17,8 +17,8 @@ start_decay_at:  5
 emb_size:  256 #decoder部分的说话人的初始化emb
 encoder_hidden_size:  256
 decoder_hidden_size:  512
-num_layers:  2
-dropout:  0
+num_layers:  3
+dropout:  0.5
 max_tgt_len:  5
 eval_interval:  800
 save_interval:  3000
@@ -33,6 +33,8 @@ tmp_score: 0
 top1: 0 #控制是否用top-1的方法来生产第二个通道
 ct_recu: 0 #控制是否采用att递减的ct构成
 
+use_tas: 0
+all_soft: 0 # 这个是决定global emb是不是全用soft的
 global_emb:  1
 SPK_EMB_SIZE: 256 #注意这个东西需要和上面的spk_emb（如果是global_emb的话）,否认则就跟decoder的hidden_size对应
 
@@ -78,7 +80,7 @@ Comm_with_Memory: 0
 # DNN/RNN隐层的维度 hidden units
 HIDDEN_UNITS:  300
 # DNN/RNN层数
-NUM_LAYERS:  2
+NUM_LAYERS:  3
 # Embedding大小,主要是给语音第三维那部分的
 EMBEDDING_SIZE:  50
 

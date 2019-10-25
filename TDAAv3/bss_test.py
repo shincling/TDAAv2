@@ -96,7 +96,7 @@ def cal_SISNR(ref_sig, out_sig, eps=1e-8):
     sisnr = 10 * np.log(ratio + eps) / np.log(10.0)
     return sisnr
 
-def cal(path):
+def cal(path,tmp=None):
     mix_number=len(set([l.split('_')[0] for l in os.listdir(path) if l[-3:]=='wav']))
     print('num of mixed :',mix_number)
     SDR_sum=np.array([])
@@ -126,6 +126,8 @@ def cal(path):
         # print aim_speech_channel.shape
         # print pre_speech_channel.shape
 
+        print(aim_speech_channel[:,:5])
+        print(pre_speech_channel[:,:5])
         result=bss_eval_sources(aim_speech_channel,pre_speech_channel)
         print(result)
         SDR_sum=np.append(SDR_sum,result[0])
@@ -133,6 +135,11 @@ def cal(path):
         # result=bss_eval_sources(aim_speech_channel,aim_speech_channel)
         # result_sdri=cal_SDRi(aim_speech_channel,pre_speech_channel,mix_speech)
         # print 'SDRi:',result_sdri
+        result=cal_SISNRi(aim_speech_channel,pre_speech_channel,mix_speech)
+        print('SI-SNR',result)
+        # for ii in range(aim_speech_channel.shape[0]):
+        #     result=cal_SISNRi(aim_speech_channel[ii],pre_speech_channel[ii],mix_speech[ii])
+        #     print('SI-SNR',result)
         # SDRi_sum=np.append(SDRi_sum,result_sdri)
 
     print('SDR_Aver for this batch:',SDR_sum.mean())

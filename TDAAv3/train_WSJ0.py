@@ -28,8 +28,8 @@ parser = argparse.ArgumentParser(description='train_CN.py')
 
 parser.add_argument('-config', default='config_WSJ0.yaml', type=str,
                     help="config file")
-parser.add_argument('-gpus', default=range(4), nargs='+', type=int,
-# parser.add_argument('-gpus', default=[3], nargs='+', type=int,
+# parser.add_argument('-gpus', default=range(4), nargs='+', type=int,
+parser.add_argument('-gpus', default=[3], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
 # parser.add_argument('-restore', default='../TDAAv2_CN/sscn_v01b_186001.pt', type=str,
 # parser.add_argument('-restore', default='TDAAv3_45001.pt', type=str,
@@ -37,8 +37,8 @@ parser.add_argument('-gpus', default=range(4), nargs='+', type=int,
 # parser.add_argument('-restore', default='data/data/log/2019-09-26-17:50:48/TDAAv3_120001.pt', type=str,
 # parser.add_argument('-restore', default='data/data/log/2019-09-29-15:59:27/TDAAv3_30001.pt', type=str,
 # parser.add_argument('-restore', default='data/data/log/2019-10-02-20:32:24/TDAAv3_42001.pt', type=str,
-# parser.add_argument('-restore', default='data/data/log/2019-10-10-17:27:32/TDAAv3_9001.pt', type=str,
-parser.add_argument('-restore', default=None, type=str,
+parser.add_argument('-restore', default='data/data/log/2019-10-21-17:40:24/TDAAv3_4001.pt', type=str,
+# parser.add_argument('-restore', default=None, type=str,
                     help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
                     help="Random seed")
@@ -103,6 +103,10 @@ print('building model...\n')
 # 调了model.seq2seq 并且运行了最后这个括号里的五个参数的方法。(初始化了一个对象也就是）
 model = getattr(models, opt.model)(config, speech_fre, mix_speech_len, num_labels, use_cuda, None, opt.score_fc)
 
+if config.use_center_loss:
+    center_loss=models.CenterLoss(num_classes=num_labels,feat_dim=config.SPK_EMB_SIZE,use_gpu=True)
+    print('Here we use center loss:',center_loss)
+
 if opt.restore:
     model.load_state_dict(checkpoints['model'])
 if use_cuda:
@@ -117,11 +121,14 @@ else:
     optim = Optim(config.optim, config.learning_rate, config.max_grad_norm,
                   lr_decay=config.learning_rate_decay, start_decay_at=config.start_decay_at)
 
-optim.set_parameters(model.parameters())
+if config.use_center_loss:
+    optim.set_parameters(list(model.parameters())+list(center_loss.parameters()))
+else:
+    optim.set_parameters(list(model.parameters()))
 
 if config.schedule:
     # scheduler = L.CosineAnnealingLR(optim.optimizer, T_max=config.epoch)
-    scheduler = L.StepLR(optim.optimizer, step_size=20, gamma=0.2)
+    scheduler = L.StepLR(optim.optimizer, step_size=15, gamma=0.2)
 
 # total number of parameters
 param_count = 0
@@ -137,7 +144,7 @@ else:
     log_path = config.log + opt.log + '/'
 if not os.path.exists(log_path):
     os.mkdir(log_path)
-print 'log_path:',log_path
+print('log_path:',log_path)
 
 writer=SummaryWriter(log_path)
 
@@ -186,6 +193,7 @@ for item in global_par_dict.keys():
 
 
 def train(epoch):
+    global e, updates, total_loss, start_time, report_total,report_correct, total_loss_sgm, total_loss_ss
     e = epoch
     model.train()
     SDR_SUM = np.array([])
@@ -201,11 +209,10 @@ def train(epoch):
     if opt.model == 'gated':
         model.current_epoch = epoch
 
-    global e, updates, total_loss, start_time, report_total,report_correct, total_loss_sgm, total_loss_ss
 
     train_data_gen = prepare_data('once', 'train')
     while True:
-        print '\n'
+        # print '\n'
         train_data = train_data_gen.next()
         if train_data == False:
             print('SDR_aver_epoch:', SDR_SUM.mean())
@@ -215,6 +222,7 @@ def train(epoch):
         src = Variable(torch.from_numpy(train_data['mix_feas']))
         # raw_tgt = [spk.keys() for spk in train_data['multi_spk_fea_list']]
         raw_tgt = [sorted(spk.keys()) for spk in train_data['multi_spk_fea_list']]
+        raw_tgt=train_data['batch_order']
         feas_tgt = models.rank_feas(raw_tgt, train_data['multi_spk_fea_list'])  # 这里是目标的图谱,aim_size,len,fre
 
         # 要保证底下这几个都是longTensor(长整数）
@@ -233,6 +241,8 @@ def train(epoch):
             feas_tgt = feas_tgt.cuda()
 
         model.zero_grad()
+        if config.use_center_loss:
+            center_loss.zero_grad()
 
         # aim_list 就是找到有正经说话人的地方的标号
         aim_list = (tgt[1:-1].transpose(0, 1).contiguous().view(-1) != dict_spk2idx['<EOS>']).nonzero().squeeze()
@@ -249,6 +259,11 @@ def train(epoch):
             sgm_loss, num_total, num_correct = model.compute_loss(outputs, targets, opt.memory)
         print('loss for SGM,this batch:', sgm_loss.cpu().item())
         writer.add_scalars('scalar/loss',{'sgm_loss':sgm_loss.cpu().item()},updates)
+        if config.use_center_loss:
+            cen_alpha=0.01
+            cen_loss = center_loss(outputs.view(-1,config.SPK_EMB_SIZE), targets.view(-1))
+            print('loss for SGM center loss,this batch:',cen_loss.cpu().item())
+            writer.add_scalars('scalar/loss',{'center_loss':cen_loss.cpu().item()},updates)
 
         src = src.transpose(0, 1)
         # expand the raw mixed-features to topk_max channel.
@@ -267,9 +282,15 @@ def train(epoch):
         writer.add_scalars('scalar/loss',{'ss_loss':ss_loss.cpu().item()},updates)
 
 
-        loss = sgm_loss + 1 * ss_loss
+        loss = sgm_loss + 5 * ss_loss
+        if config.use_center_loss:
+            loss = cen_loss*cen_alpha+ loss
 
         loss.backward()
+
+        if config.use_center_loss:
+            for c_param in center_loss.parameters():
+                c_param.grad.data *= (0.01/(cen_alpha*scheduler.get_lr()[0]))
         # print 'totallllllllllll loss:',loss
         total_loss_sgm += sgm_loss.cpu().item()
         total_loss_ss += ss_loss.cpu().item()
@@ -316,9 +337,9 @@ def train(epoch):
             print('evaluating after %d updates...\r' % updates)
             original_bs=config.batch_size
             score = eval(epoch) # eval的时候batch_size会变成1
-            print 'Orignal bs:',original_bs
+            # print 'Orignal bs:',original_bs
             config.batch_size=original_bs
-            print 'Now bs:',config.batch_size
+            # print 'Now bs:',config.batch_size
             for metric in config.metric:
                 scores[metric].append(score[metric])
                 lera.log({
@@ -342,11 +363,11 @@ def train(epoch):
 def eval(epoch):
     # config.batch_size=1
     model.eval()
-    print '\n\n测试的时候请设置config里的batch_size为1！！！please set the batch_size as 1'
+    # print '\n\n测试的时候请设置config里的batch_size为1！！！please set the batch_size as 1'
     reference, candidate, source, alignments = [], [], [], []
     e = epoch
     test_or_valid = 'test'
-    #test_or_valid = 'valid'
+    # test_or_valid = 'valid'
     print('Test or valid:', test_or_valid)
     eval_data_gen = prepare_data('once', test_or_valid, config.MIN_MIX, config.MAX_MIX)
     SDR_SUM = np.array([])
@@ -362,7 +383,8 @@ def eval(epoch):
             break  # 如果这个epoch的生成器没有数据了，直接进入下一个epoch
         src = Variable(torch.from_numpy(eval_data['mix_feas']))
 
-        raw_tgt = [sorted(spk.keys()) for spk in eval_data['multi_spk_fea_list']]
+        # raw_tgt = [sorted(spk.keys()) for spk in eval_data['multi_spk_fea_list']]
+        raw_tgt= eval_data['batch_order']
         feas_tgt = models.rank_feas(raw_tgt, eval_data['multi_spk_fea_list'])  # 这里是目标的图谱
 
         top_k = len(raw_tgt[0])
@@ -433,8 +455,8 @@ def eval(epoch):
                 sdr_aver_batch, sdri_aver_batch=  bss_test.cal('batch_output1/')
                 SDR_SUM = np.append(SDR_SUM, sdr_aver_batch)
                 SDRi_SUM = np.append(SDRi_SUM, sdri_aver_batch)
-            except AssertionError,wrong_info:
-                print 'Errors in calculating the SDR',wrong_info
+            except(AssertionError):
+                print('Errors in calculating the SDR',wrong_info)
             print('SDR_aver_now:', SDR_SUM.mean())
             print('SDRi_aver_now:', SDRi_SUM.mean())
             lera.log({'SDR sample'+test_or_valid: SDR_SUM.mean()})

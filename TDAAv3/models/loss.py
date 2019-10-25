@@ -6,15 +6,20 @@ import data.dict as dict
 from torch.autograd import Variable
 import torch.nn.functional as F
 import models.focal_loss as focal_loss
+from itertools import permutations
 
 
-def rank_feas(raw_tgt, feas_list):
+EPS = 1e-8
+def rank_feas(raw_tgt, feas_list, out_type='torch'):
     final_num = []
     for each_feas, each_line in zip(feas_list, raw_tgt):
         for spk in each_line:
             final_num.append(each_feas[spk])
     # 目标就是这个batch里一共有多少条比如 1spk 3spk 2spk,最后就是6个spk的特征
-    return torch.from_numpy(np.array(final_num))
+    if out_type=='numpy':
+        return np.array(final_num)
+    else:
+        return torch.from_numpy(np.array(final_num))
 
 
 def criterion(tgt_vocab_size, use_cuda,loss):
@@ -90,26 +95,24 @@ def ss_loss(config, x_input_map_multi, multi_mask, y_multi_map, loss_multi_func,
     print('loss for whole separation part:', loss_multi_speech.data.cpu().numpy())
     return loss_multi_speech
 
-def ss_tas_loss(config, x_input_map_multi, multi_mask, y_multi_map, loss_multi_func,wav_loss):
-    predict_multi_map = multi_mask * x_input_map_multi
-    # predict_multi_map=Variable(y_multi_map)
-    y_multi_map = Variable(y_multi_map)
+def ss_tas_loss(config,mix_wav,predict_wav, y_multi_wav, mix_length,loss_multi_func,wav_loss):
+    loss = cal_loss_with_order(y_multi_wav,predict_wav,mix_length)[0]
+    return loss
 
-    loss_multi_speech = loss_multi_func(predict_multi_map, y_multi_map)
+def cal_loss_with_order(source, estimate_source, source_lengths):
+    """
+    Args:
+        source: [B, C, T], B is batch size
+        estimate_source: [B, C, T]
+        source_lengths: [B]
+    """
+    print(source[:,:,:5])
+    print(estimate_source[:,:,:5])
+    max_snr = cal_si_snr_with_order(source, estimate_source, source_lengths)
+    loss = 0 - torch.mean(max_snr)
+    return loss,
 
-    # 各通道和为１的loss部分,应该可以更多的带来差异
-    # y_sum_map=Variable(torch.ones(config.batch_size,config.mix_speech_len,config.speech_fre)).cuda()
-    # predict_sum_map=torch.sum(multi_mask,1)
-    # loss_multi_sum_speech=loss_multi_func(predict_sum_map,y_sum_map)
-    print('loss 1 eval:  ', loss_multi_speech.data.cpu().numpy())
-    # print('losssum eval :',loss_multi_sum_speech.data.cpu().numpy()
-    # loss_multi_speech=loss_multi_speech+0.5*loss_multi_sum_speech
-    print('evaling multi-abs norm this eval batch:', torch.abs(y_multi_map - predict_multi_map).norm().data.cpu().numpy())
-    # loss_multi_speech=loss_multi_speech+3*loss_multi_sum_speech
-    print('loss for whole separation part:', loss_multi_speech.data.cpu().numpy())
-    return loss_multi_speech
-
-def cal_loss(source, estimate_source, source_lengths):
+def cal_loss_with_PIT(source, estimate_source, source_lengths):
     """
     Args:
         source: [B, C, T], B is batch size
@@ -123,6 +126,45 @@ def cal_loss(source, estimate_source, source_lengths):
     reorder_estimate_source = reorder_source(estimate_source, perms, max_snr_idx)
     return loss, max_snr, estimate_source, reorder_estimate_source
 
+def cal_si_snr_with_order(source, estimate_source, source_lengths):
+    """Calculate SI-SNR with given order.
+    Args:
+        source: [B, C, T], B is batch size
+        estimate_source: [B, C, T]
+        source_lengths: [B], each item is between [0, T]
+    """
+    assert source.size() == estimate_source.size()
+    B, C, T = source.size()
+    # mask padding position along T
+    mask = get_mask(source, source_lengths)
+    estimate_source *= mask
+
+    # Step 1. Zero-mean norm
+    num_samples = source_lengths.view(-1, 1, 1).float()  # [B, 1, 1]
+    mean_target = torch.sum(source, dim=2, keepdim=True) / num_samples
+    mean_estimate = torch.sum(estimate_source, dim=2, keepdim=True) / num_samples
+    zero_mean_target = source - mean_target
+    zero_mean_estimate = estimate_source - mean_estimate
+    # mask padding position along T
+    zero_mean_target *= mask
+    zero_mean_estimate *= mask
+
+    # Step 2. SI-SNR with order
+    # reshape to use broadcast
+    s_target = zero_mean_target  # [B, C, T]
+    s_estimate = zero_mean_estimate  # [B, C, T]
+    # s_target = <s', s>s / ||s||^2
+    pair_wise_dot = torch.sum(s_estimate * s_target, dim=2, keepdim=True)  # [B, C, 1]
+    s_target_energy = torch.sum(s_target ** 2, dim=2, keepdim=True) + EPS  # [B, C, 1]
+    pair_wise_proj = pair_wise_dot * s_target / s_target_energy  # [B, C, T]
+    # e_noise = s' - s_target
+    e_noise = s_estimate - pair_wise_proj  # [B, C, T]
+    # SI-SNR = 10 * log_10(||s_target||^2 / ||e_noise||^2)
+    pair_wise_si_snr = torch.sum(pair_wise_proj ** 2, dim=2) / (torch.sum(e_noise ** 2, dim=2) + EPS)
+    pair_wise_si_snr = 10 * torch.log10(pair_wise_si_snr + EPS)  # [B, C]
+    print(pair_wise_si_snr)
+
+    return torch.sum(pair_wise_si_snr,dim=1)
 
 def cal_si_snr_with_pit(source, estimate_source, source_lengths):
     """Calculate SI-SNR with PIT training.
@@ -176,6 +218,42 @@ def cal_si_snr_with_pit(source, estimate_source, source_lengths):
     max_snr /= C
     return max_snr, perms, max_snr_idx
 
+def reorder_source(source, perms, max_snr_idx):
+    """
+    Args:
+        source: [B, C, T]
+        perms: [C!, C], permutations
+        max_snr_idx: [B], each item is between [0, C!)
+    Returns:
+        reorder_source: [B, C, T]
+    """
+    # B, C, *_ = source.size()
+    B, C, __ = source.size()
+    # [B, C], permutation whose SI-SNR is max of each utterance
+    # for each utterance, reorder estimate source according this permutation
+    max_snr_perm = torch.index_select(perms, dim=0, index=max_snr_idx)
+    # print('max_snr_perm', max_snr_perm)
+    # maybe use torch.gather()/index_select()/scatter() to impl this?
+    reorder_source = torch.zeros_like(source)
+    for b in range(B):
+        for c in range(C):
+            reorder_source[b, c] = source[b, max_snr_perm[b][c]]
+    return reorder_source
+
+
+def get_mask(source, source_lengths):
+    """
+    Args:
+        source: [B, C, T]
+        source_lengths: [B]
+    Returns:
+        mask: [B, 1, T]
+    """
+    B, _, T = source.size()
+    mask = source.new_ones((B, 1, T))
+    for i in range(B):
+        mask[i, :, source_lengths[i]:] = 0
+    return mask
 def ss_loss_MLMSE(config, x_input_map_multi, multi_mask, y_multi_map, loss_multi_func, Var):
     try:
         if Var == None:

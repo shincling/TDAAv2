@@ -28,14 +28,16 @@ parser = argparse.ArgumentParser(description='train_CN.py')
 
 parser.add_argument('-config', default='config_CN.yaml', type=str,
                     help="config file")
-parser.add_argument('-gpus', default=range(2), nargs='+', type=int,
-# parser.add_argument('-gpus', default=[1,], nargs='+', type=int,
+# parser.add_argument('-gpus', default=range(4), nargs='+', type=int,
+parser.add_argument('-gpus', default=[3], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
 # parser.add_argument('-restore', default='../TDAAv2_CN/sscn_v01b_186001.pt', type=str,
 # parser.add_argument('-restore', default='TDAAv3_45001.pt', type=str,
 # parser.add_argument('-restore', default='TDAAv3_33001_nof.pt', type=str,
-parser.add_argument('-restore', default='data/data/log/2019-09-26-17:50:48/TDAAv3_120001.pt', type=str,
-# parser.add_argument('-restore', default=None, type=str,
+# parser.add_argument('-restore', default='data/data/log/2019-09-26-17:50:48/TDAAv3_120001.pt', type=str,
+# parser.add_argument('-restore', default='data/data/log/2019-09-29-15:59:27/TDAAv3_30001.pt', type=str,
+# parser.add_argument('-restore', default='data/data/log/2019-10-02-20:32:24/TDAAv3_42001.pt', type=str,
+parser.add_argument('-restore', default=None, type=str,
                     help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
                     help="Random seed")
@@ -69,7 +71,7 @@ use_cuda = torch.cuda.is_available() and len(opt.gpus) > 0
 use_cuda = True
 if use_cuda:
     torch.cuda.set_device(opt.gpus[0])
-    torch.cuda.manual_seed(opt.seed)
+torch.cuda.manual_seed(opt.seed)
 print(use_cuda)
 
 # load the global statistic of the data
@@ -163,7 +165,7 @@ best_SDR = 0.0
 
 # train
 global_par_dict={
-    'title': unicode('SS CN v0.3b'),
+    'title': unicode('SS CN v0.4 focal 3layers'),
     'updates': updates,
     'batch_size': config.batch_size,
     'WFM': config.WFM,

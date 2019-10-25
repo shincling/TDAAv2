@@ -8,6 +8,7 @@ import resampy
 import librosa
 import argparse
 import data.utils as utils
+import models
 
 # Add the config.
 parser = argparse.ArgumentParser(description='predata scripts.')
@@ -21,7 +22,7 @@ channel_first = config.channel_first
 np.random.seed(1)  # 设定种子
 random.seed(1)
 
-aim_path = '../../../DL4SS_Keras/Torch_multi/Dataset_Multi/1/' + config.DATASET
+aim_path = '../../DL4SS_Keras/Torch_multi/Dataset_Multi/1/' + config.DATASET
 # 训练文件列表
 TRAIN_LIST = aim_path + '/train_list'
 # 验证文件列表
@@ -40,7 +41,16 @@ def pad_list(xs, pad_value):
         pad[i, :xs[i].size(0)] = xs[i]
     return pad
 
-def _collate_fn(mix_data,source_data):
+def get_energy_order(multi_spk_fea_list):
+    # Input: B个dict，每个dict里是名字和fea
+    order=[]
+    for one_line in multi_spk_fea_list:
+        dd=sorted(one_line.items(),key= lambda d:d[1].sum(),reverse=True)
+        dd=[d[0] for d in dd]
+        order.append(dd)
+    return order
+
+def _collate_fn(mix_data,source_data,raw_tgt=None):
     """
     Args:
         batch: list, len(batch) = 1. See AudioDataset.__getitem__()
@@ -50,7 +60,13 @@ Returns:
         sources_pad: B x C x T, torch.Tensor
     """
     mixtures, sources = mix_data,source_data
-    sources = np.stack([np.stack(i.values()) for i in source_data])
+    if raw_tgt is None: #如果没有给定顺序
+        raw_tgt = [sorted(spk.keys()) for spk in source_data]
+    # sources= models.rank_feas(raw_tgt, source_data,out_type='numpy')  # 这里是目标的图谱,aim_size,wav_len
+    sources=[]
+    for each_feas, each_line in zip(source_data, raw_tgt):
+        sources.append(np.stack([each_feas[spk] for spk in each_line]))
+    sources=np.array(sources)
 
     # get batch of lengths of input sequences
     ilens = np.array([mix.shape[0] for mix in mixtures])
@@ -131,7 +147,7 @@ def prepare_data(mode, train_or_test, min=None, max=None):
             all_spk = all_spk_train + all_spk_eval + all_spk_test
             spk_samples_list = {}
             batch_idx = 0
-            list_path = '../../../DL4SS_Keras/TDAA_beta/create-speaker-mixtures/'
+            list_path = '../../DL4SS_Keras/TDAA_beta/create-speaker-mixtures/'
             all_samples_list = {}
             sample_idx = {}
             number_samples = {}
@@ -188,6 +204,7 @@ def prepare_data(mode, train_or_test, min=None, max=None):
                     aim_spkname = []
                     query = []  # 应该是batch_size，shape(query)的形式，用list再转换把
                     multi_spk_fea_list = []
+                    multi_spk_order_list=[] #用来管理每个混合语音里说话人的能俩给你大小的order
                     multi_spk_wav_list = []
                     continue
 
@@ -311,6 +328,7 @@ def prepare_data(mode, train_or_test, min=None, max=None):
                     query = np.array(query)
                     print('spk_list_from_this_gen:{}'.format(aim_spkname))
                     print('aim spk list:', [one.keys() for one in multi_spk_fea_list])
+                    batch_ordre=get_energy_order(multi_spk_fea_list)
                     # print('\nmix_speechs.shape,mix_feas.shape,aim_fea.shape,aim_spkname.shape,query.shape,all_spk_num:'
                     # print(mix_speechs.shape,mix_feas.shape,aim_fea.shape,len(aim_spkname),query.shape,len(all_spk)
                     if mode == 'global':
@@ -340,8 +358,9 @@ def prepare_data(mode, train_or_test, min=None, max=None):
                                'num_all_spk': len(all_spk),
                                'multi_spk_fea_list': multi_spk_fea_list,
                                'multi_spk_wav_list': multi_spk_wav_list,
+                               'batch_order': batch_ordre,
                                'batch_total': batch_total,
-                               'tas_zip': _collate_fn(mix_speechs,multi_spk_wav_list)
+                               'tas_zip': _collate_fn(mix_speechs,multi_spk_wav_list,batch_ordre)
                                }
                     elif mode == 'tasnet':
                         yield _collate_fn(mix_speechs,multi_spk_wav_list)

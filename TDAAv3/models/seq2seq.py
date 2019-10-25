@@ -54,8 +54,8 @@ class seq2seq(nn.Module):
         else:
             return models.ss_loss_MLMSE(self.config, x_input_map_multi, masks, y_multi_map, self.loss_for_ss, Var)
 
-    def separation_tas_loss(self, x_input_wav_multi, masks, y_multi_wav):
-        return models.ss_tas_loss(self.config, x_input_wav_multi, masks, y_multi_wav, self.loss_for_ss,self.wav_loss)
+    def separation_tas_loss(self, x_input_wav_multi,predict_wav, y_multi_wav,mix_lengths):
+        return models.ss_tas_loss(self.config, x_input_wav_multi,predict_wav, y_multi_wav, mix_lengths,self.loss_for_ss,self.wav_loss)
 
     def update_var(self, x_input_map_multi, multi_masks, y_multi_map):
         predict_multi_map = torch.mean(multi_masks * x_input_map_multi, -2)  # 在时间维度上平均
@@ -73,10 +73,12 @@ class seq2seq(nn.Module):
         # tgt = torch.index_select(tgt, dim=0, index=indices)
 
         src = src.transpose(0, 1)
+        if mix_wav is not None:
+            mix_wav=mix_wav.transpose(0,1)
         contexts, state = self.encoder(src, lengths.data.tolist())  # context是：（max_len,batch_size,hidden_size×2方向）这么大
         if not self.config.global_emb:
             # outputs, final_state, embs = self.decoder(tgt[:-1], state, contexts.transpose(0, 1))
-            outputs, final_state, embs = self.decoder(tgt, state, contexts.transpose(0, 1))
+            outputs, final_state, embs, gamma = self.decoder(tgt, state, contexts.transpose(0, 1))
             # 这里的outputs就是没个step输出的隐层向量,大小是len+1,bs,emb（注意是第一个词到 EOS的总共）
             if not self.config.hidden_mix:
                 predicted_maps = self.ss_model(src, outputs[:-1, :], tgt[1:-1],dict_spk2idx)
@@ -90,7 +92,11 @@ class seq2seq(nn.Module):
             if self.config.use_tas:
                 predicted_maps = self.ss_model(mix_wav, global_embs)
             else:
-                predicted_maps = self.ss_model(src, global_embs, tgt[1:-1], dict_spk2idx)
+                if self.config.global_hidden:
+                    # predicted_maps = self.ss_model(src,outputs[:-1], tgt[1:-1], dict_spk2idx)
+                    predicted_maps = self.ss_model(src,outputs[1:], tgt[1:-1], dict_spk2idx)
+                else:
+                    predicted_maps = self.ss_model(src, global_embs, tgt[1:-1], dict_spk2idx)
 
         return outputs, tgt[1:], predicted_maps.transpose(0, 1),gamma
 
@@ -118,11 +124,13 @@ class seq2seq(nn.Module):
 
         return sample_ids.t(), alignments.t()
 
-    def beam_sample(self, src, src_len, dict_spk2idx, tgt, beam_size=1):
+    def beam_sample(self, src, src_len, dict_spk2idx, tgt, beam_size=1,mix_wav=None):
 
         src = src.transpose(0, 1)
         # beam_size = self.config.beam_size
         batch_size = src.size(0)
+        if mix_wav is not None:
+            mix_wav=mix_wav.transpose(0,1)
 
         # (1) Run the encoder on the src. Done!!!!
         if self.use_cuda:
@@ -246,8 +254,7 @@ class seq2seq(nn.Module):
             allAttn.append(attn[0])
             allHiddens.append(hiddens[0])
             allEmbs.append(embs[0])
-        print
-        allHyps
+        print(allHyps)
 
         if not self.config.global_emb:
             outputs = Variable(torch.stack(allHiddens, 0).transpose(0, 1))  # to [decLen, bs, dim]
@@ -262,9 +269,16 @@ class seq2seq(nn.Module):
         else:
             # allEmbs=[j[1:self.config.MAX_MIX] for j in allEmbs]
             ss_embs = Variable(torch.stack(allEmbs, 0).transpose(0, 1))  # to [decLen, bs, dim]
-            if not self.config.top1:
-                predicted_maps = self.ss_model(src, ss_embs[1:, :], tgt[1:-1], dict_spk2idx)
-            else:
+            if self.config.use_tas:
+                predicted_maps = self.ss_model(mix_wav,ss_embs[1:].transpose(0,1))
+            elif self.config.global_hidden:
+                ss_hidden = Variable(torch.stack(allHiddens, 0).transpose(0, 1))  # to [decLen, bs, dim]
+                print(ss_hidden.shape)
+
+                predicted_maps = self.ss_model(src,ss_hidden[1:, :], tgt[1:-1], dict_spk2idx)
+            elif self.config.top1:
                 predicted_maps = self.ss_model(src, ss_embs[1:2], tgt[1:2])
+            else:
+                predicted_maps = self.ss_model(src, ss_embs[1:, :], tgt[1:-1], dict_spk2idx)
                 # predicted_maps = self.ss_model(src, ss_embs, tgt[1:2])
         return allHyps, allAttn, allHiddens, predicted_maps  # .transpose(0,1)
