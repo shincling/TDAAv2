@@ -106,8 +106,8 @@ def cal_loss_with_order(source, estimate_source, source_lengths):
         estimate_source: [B, C, T]
         source_lengths: [B]
     """
-    print(source[:,:,:5])
-    print(estimate_source[:,:,:5])
+    # print('real Tas SNI:',source[:,:,16000:16005])
+    # print('pre Tas SNI:',estimate_source[:,:,16000:16005])
     max_snr = cal_si_snr_with_order(source, estimate_source, source_lengths)
     loss = 0 - torch.mean(max_snr)
     return loss,
@@ -152,19 +152,23 @@ def cal_si_snr_with_order(source, estimate_source, source_lengths):
     # Step 2. SI-SNR with order
     # reshape to use broadcast
     s_target = zero_mean_target  # [B, C, T]
+    # print('s_target',s_target[0,:,16000:16005])
     s_estimate = zero_mean_estimate  # [B, C, T]
+    # print('s_estimate',s_estimate[0,:,16000:16005])
     # s_target = <s', s>s / ||s||^2
     pair_wise_dot = torch.sum(s_estimate * s_target, dim=2, keepdim=True)  # [B, C, 1]
     s_target_energy = torch.sum(s_target ** 2, dim=2, keepdim=True) + EPS  # [B, C, 1]
     pair_wise_proj = pair_wise_dot * s_target / s_target_energy  # [B, C, T]
     # e_noise = s' - s_target
     e_noise = s_estimate - pair_wise_proj  # [B, C, T]
+    # print('e_noise',e_noise[0,:,16000:16005])
     # SI-SNR = 10 * log_10(||s_target||^2 / ||e_noise||^2)
     pair_wise_si_snr = torch.sum(pair_wise_proj ** 2, dim=2) / (torch.sum(e_noise ** 2, dim=2) + EPS)
+    # print('pair_si_snr',pair_wise_si_snr[0,:])
     pair_wise_si_snr = 10 * torch.log10(pair_wise_si_snr + EPS)  # [B, C]
     print(pair_wise_si_snr)
 
-    return torch.sum(pair_wise_si_snr,dim=1)
+    return torch.sum(pair_wise_si_snr,dim=1)/C
 
 def cal_si_snr_with_pit(source, estimate_source, source_lengths):
     """Calculate SI-SNR with PIT training.
