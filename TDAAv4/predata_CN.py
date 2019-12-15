@@ -93,7 +93,7 @@ def process_signal(signal, rate, aim_len, normalize=True, num_ordier=None):
     #     signal = np.append(signal, np.zeros(aim_len - signal.shape[0]))
 
     if signal.shape[0] < aim_len:  # 所有信号引入一个偏移，然后用根据最大长度用 0 补齐,
-        shift_frames = random.sample(range(aim_len - signal.shape[0] + 1), 1)[0]  # 0~长度差
+        shift_frames = random.sample(list(range(aim_len - signal.shape[0] + 1)), 1)[0]  # 0~长度差
         signal = np.append(np.append(np.zeros(shift_frames), signal),
                            np.zeros(aim_len - signal.shape[0] - shift_frames))
     # if signal.shape[0] < aim_len:
@@ -144,10 +144,10 @@ def prepare_data(mode, train_or_test, min=None, max=None, add_noise_ratio=0.5):
             all_spk = sorted(os.listdir(data_path))
             batch_idx = 0
             batch_total = config.num_samples_one_epoch / config.batch_size
-            print( 'batch_total_num:', batch_total)
+            print(( 'batch_total_num:', batch_total))
             number_samples_all = config.num_samples_one_epoch
 
-            mix_number_list = range(config.MIN_MIX, config.MAX_MIX + 1)
+            mix_number_list = list(range(config.MIN_MIX, config.MAX_MIX + 1))
             for ___ in range(number_samples_all):  # 每一步合成一条语音
                 if ___ == number_samples_all - 1:
                     print( 'This epoch ends here.')
@@ -263,7 +263,7 @@ def prepare_data(mode, train_or_test, min=None, max=None, add_noise_ratio=0.5):
                 mix_phase.append(
                     np.transpose(librosa.core.spectrum.stft(wav_mix, config.FRAME_LENGTH, config.FRAME_SHIFT, )))
                 batch_idx += 1
-                print 'batch_dix:{}/{},'.format(batch_idx, config.batch_size),
+                print('batch_dix:{}/{},'.format(batch_idx, config.batch_size), end=' ')
 
                 if batch_idx == config.batch_size:  # 填满了一个batch
                     # 下一个batch的混合说话人个数， 先调整一下
@@ -272,7 +272,7 @@ def prepare_data(mode, train_or_test, min=None, max=None, add_noise_ratio=0.5):
                     aim_fea = np.array(aim_fea)
                     query = np.array(query)
                     # print 'aim_spk_list_from_this_gen:{}'.format(aim_spkname)
-                    print( 'spk_list_from_this_gen:', [one.keys() for one in multi_spk_fea_list])
+                    print(( 'spk_list_from_this_gen:', [list(one.keys()) for one in multi_spk_fea_list]))
                     # print '\nmix_speechs.shape,mix_feas.shape,aim_fea.shape,aim_spkname.shape,query.shape,all_spk_num:'
                     # print mix_speechs.shape,mix_feas.shape,aim_fea.shape,len(aim_spkname),query.shape,len(all_spk)
                     if mode == 'global':

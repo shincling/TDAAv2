@@ -1,7 +1,7 @@
 import torch
 import torch.utils.data as torch_data
 import os
-import data.utils
+from . import data.utils
 
 class dataset(torch_data.Dataset):
 
@@ -30,7 +30,7 @@ def save_dataset(dataset, path):
 
 def padding(data):
     #data.sort(key=lambda x: len(x[0]), reverse=True)
-    src, tgt, raw_src, raw_tgt = zip(*data)
+    src, tgt, raw_src, raw_tgt = list(zip(*data))
 
     src_len = [len(s) for s in src]
     src_pad = torch.zeros(len(src), max(src_len)).long()

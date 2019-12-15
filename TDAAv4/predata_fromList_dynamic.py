@@ -47,7 +47,7 @@ def get_energy_order(multi_spk_fea_list):
     # Input: B个dict，每个dict里是名字和fea
     order=[]
     for one_line in multi_spk_fea_list:
-        dd=sorted(one_line.items(),key= lambda d:d[1].sum(),reverse=True)
+        dd=sorted(list(one_line.items()),key= lambda d:d[1].sum(),reverse=True)
         dd=[d[0] for d in dd]
         order.append(dd)
     return order
@@ -103,11 +103,11 @@ def split_forTrainDevTest(spk_list, train_or_test):
 
 
 def prepare_datasize(gen):
-    data = gen.next()
+    data = next(gen)
     # 此处顺序是 mix_speechs.shape,mix_feas.shape,aim_fea.shape,aim_spkid.shape,query.shape
     # 一个例子：(5, 17040) (5, 134, 129) (5, 134, 129) (5,) (5, 32, 400, 300, 3)
     # 暂时输出的是：语音长度、语音频率数量、视频截断之后的长度
-    print('datasize:', data[1].shape[1], data[1].shape[2], data[4].shape[1], data[-1], (data[4].shape[2], data[4].shape[3]))
+    print(('datasize:', data[1].shape[1], data[1].shape[2], data[4].shape[1], data[-1], (data[4].shape[2], data[4].shape[3])))
     return data[1].shape[1], data[1].shape[2], data[4].shape[1], data[-1], (data[4].shape[2], data[4].shape[3])
 
 
@@ -154,7 +154,7 @@ def prepare_data(mode, train_or_test, min=None, max=None):
             sample_idx = {}
             number_samples = {}
             batch_mix = {}
-            mix_number_list = range(config.MIN_MIX, config.MAX_MIX + 1)
+            mix_number_list = list(range(config.MIN_MIX, config.MAX_MIX + 1))
             number_samples_all = 0
             for mix_k in mix_number_list:
                 if train_or_test == 'train':
@@ -173,10 +173,10 @@ def prepare_data(mode, train_or_test, min=None, max=None):
 
                 if train_or_test == 'train' and config.SHUFFLE_BATCH:
                     random.shuffle(all_samples_list[mix_k])
-                    print('shuffle success!', all_samples_list[mix_k][0])
+                    print(('shuffle success!', all_samples_list[mix_k][0]))
 
             batch_total = number_samples_all / config.batch_size
-            print('batch_total_num:', batch_total)
+            print(('batch_total_num:', batch_total))
 
             mix_k = random.sample(mix_number_list, 1)[0]
             # while True:
@@ -185,9 +185,9 @@ def prepare_data(mode, train_or_test, min=None, max=None):
                     print('ends here.___')
                     yield False
                 mix_len = 0
-                print(mix_k, 'mixed sample_idx[mix_k]:', sample_idx[mix_k], batch_idx)
+                print((mix_k, 'mixed sample_idx[mix_k]:', sample_idx[mix_k], batch_idx))
                 if sample_idx[mix_k] >= batch_mix[mix_k] * config.batch_size:
-                    print(mix_k, 'mixed data is over~trun to the others number.')
+                    print((mix_k, 'mixed data is over~trun to the others number.'))
                     mix_number_list.remove(mix_k)
                     try:
                         mix_k = random.sample(mix_number_list, 1)[0]
@@ -213,7 +213,7 @@ def prepare_data(mode, train_or_test, min=None, max=None):
                 all_over = 1  # 用来判断所有的是不是都结束了
                 for kkkkk in mix_number_list:
                     if not sample_idx[kkkkk] >= batch_mix[mix_k] * config.batch_size:
-                        print(kkkkk, 'mixed data is not over')
+                        print((kkkkk, 'mixed data is not over'))
                         all_over = 0
                         break
                     if all_over:
@@ -253,7 +253,7 @@ def prepare_data(mode, train_or_test, min=None, max=None):
                         spk_speech_path = data_path + '/' + 'eval_test' + '/' + spk + '/' + sample_name + '.wav'
 
                     signal, rate = sf.read(spk_speech_path)  # signal 是采样值，rate 是采样频率
-                    print(k,'wav length:',signal.shape[0]/float(rate))
+                    print((k,'wav length:',signal.shape[0]/float(rate)))
                     train_len.append(signal.shape[0])
                     if len(signal.shape) > 1:
                         signal = signal[:, 0]
@@ -271,7 +271,7 @@ def prepare_data(mode, train_or_test, min=None, max=None):
 
                     # 如果需要augment数据的话，先进行随机shift, 以后考虑固定shift
                     if config.AUGMENT_DATA and train_or_test == 'train':
-                        random_shift = random.sample(range(len(signal)), 1)[0]
+                        random_shift = random.sample(list(range(len(signal))), 1)[0]
                         signal = np.append(signal[random_shift:], signal[:random_shift])
 
                     if signal.shape[0] < config.MAX_LEN:  # 根据最大长度用 0 补齐,
@@ -330,8 +330,8 @@ def prepare_data(mode, train_or_test, min=None, max=None):
                     aim_fea = np.array(aim_fea)
                     # aim_spkid=np.array(aim_spkid)
                     query = np.array(query)
-                    print('spk_list_from_this_gen:{}'.format(aim_spkname))
-                    print('aim spk list:', [one.keys() for one in multi_spk_fea_list])
+                    print(('spk_list_from_this_gen:{}'.format(aim_spkname)))
+                    print(('aim spk list:', [list(one.keys()) for one in multi_spk_fea_list]))
                     batch_ordre=get_energy_order(multi_spk_fea_list)
                     # print('\nmix_speechs.shape,mix_feas.shape,aim_fea.shape,aim_spkname.shape,query.shape,all_spk_num:'
                     # print(mix_speechs.shape,mix_feas.shape,aim_fea.shape,len(aim_spkname),query.shape,len(all_spk)
@@ -403,6 +403,6 @@ train_len=[]
 if __name__ == '__main__':
     train_data_gen = prepare_data('once', 'train')
     while True:
-        train_data_gen.next()
+        next(train_data_gen)
     pass
-    print(np.array(train_len).mean())
+    print((np.array(train_len).mean()))

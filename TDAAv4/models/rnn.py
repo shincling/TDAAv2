@@ -113,7 +113,7 @@ class rnn_decoder(nn.Module):
 
         if hasattr(config, 'att_act'):
             activation = config.att_act
-            print('use attention activation %s' % activation)
+            print(('use attention activation %s' % activation))
         else:
             activation = None
 

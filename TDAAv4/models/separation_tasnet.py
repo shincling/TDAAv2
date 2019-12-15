@@ -438,26 +438,26 @@ if __name__ == "__main__":
     encoder = Encoder(L, N)
     encoder.conv1d_U.weight.data = torch.randint(2, encoder.conv1d_U.weight.size())
     mixture_w = encoder(mixture)
-    print('mixture', mixture)
-    print('U', encoder.conv1d_U.weight)
-    print('mixture_w', mixture_w)
-    print('mixture_w size', mixture_w.size())
+    print(('mixture', mixture))
+    print(('U', encoder.conv1d_U.weight))
+    print(('mixture_w', mixture_w))
+    print(('mixture_w size', mixture_w.size()))
 
     # test TemporalConvNet
     separator = TemporalConvNet(N, B, H, P, X, R, C, norm_type=norm_type, causal=causal)
     est_mask = separator(mixture_w)
-    print('est_mask', est_mask)
-    print('model', separator)
+    print(('est_mask', est_mask))
+    print(('model', separator))
 
     # test Decoder
     decoder = Decoder(N, L)
     est_mask = torch.randint(2, (B, K, C, N))
     est_source = decoder(mixture_w, est_mask)
-    print('est_source', est_source)
+    print(('est_source', est_source))
 
     # test Conv-TasNet
     conv_tasnet = ConvTasNet(N, L, B, H, P, X, R, C, norm_type=norm_type)
     est_source = conv_tasnet(mixture)
-    print('est_source', est_source)
-    print('est_source size', est_source.size())
+    print(('est_source', est_source))
+    print(('est_source size', est_source.size()))
 

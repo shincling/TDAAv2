@@ -24,7 +24,7 @@ def read_config(path):
 
 def read_datas(filename, trans_to_num=False):
     lines = open(filename, 'r').readlines()
-    lines = list(map(lambda x: x.split(), lines))
+    lines = list([x.split() for x in lines])
     if trans_to_num:
         lines = [list(map(int, line)) for line in lines]
     return lines
@@ -33,14 +33,14 @@ def read_datas(filename, trans_to_num=False):
 def save_datas(data, filename, trans_to_str=False):
     if trans_to_str:
         data = [list(map(str, line)) for line in data]
-    lines = list(map(lambda x: " ".join(x), data))
+    lines = list([" ".join(x) for x in data])
     with open(filename, 'w') as f:
         f.write("\n".join(lines))
 
 
 def logging(file):
     def write_log(s):
-        print(s, '')
+        print((s, ''))
         with open(file, 'a') as f:
             f.write(s)
 
@@ -114,12 +114,12 @@ def eval_metrics(reference, candidate, label_dict, log_path):
 def bss_eval(config, predict_multi_map, y_multi_map, y_map_gtruth, train_data, dst='batch_output'):
     # dst='batch_output'
     if os.path.exists(dst):
-        print(" \ncleanup: " + dst + "/")
+        print((" \ncleanup: " + dst + "/"))
         shutil.rmtree(dst)
     os.makedirs(dst)
 
     for sample_idx, each_sample in enumerate(train_data['multi_spk_wav_list']):
-        for each_spk in each_sample.keys():
+        for each_spk in list(each_sample.keys()):
             this_spk = each_spk
             wav_genTrue = each_sample[this_spk]
             # min_len = 39936
@@ -163,12 +163,12 @@ def bss_eval(config, predict_multi_map, y_multi_map, y_map_gtruth, train_data, d
 def bss_eval2(config, predict_multi_map, y_multi_map, y_map_gtruth, train_data, dst='batch_output'):
     # dst='batch_output'
     if os.path.exists(dst):
-        print(" \ncleanup: " + dst + "/")
+        print((" \ncleanup: " + dst + "/"))
         shutil.rmtree(dst)
     os.makedirs(dst)
 
     for sample_idx, each_sample in enumerate(train_data['multi_spk_wav_list']):
-        for each_spk in each_sample.keys():
+        for each_spk in list(each_sample.keys()):
             this_spk = each_spk
             wav_genTrue = each_sample[this_spk]
             # min_len = 39936
@@ -212,12 +212,12 @@ def bss_eval2(config, predict_multi_map, y_multi_map, y_map_gtruth, train_data, 
 def bss_eval_tas(config, predict_wav, y_multi_map, y_map_gtruth, train_data, dst='batch_output'):
     # dst='batch_output'
     if os.path.exists(dst):
-        print(" \ncleanup: " + dst + "/")
+        print((" \ncleanup: " + dst + "/"))
         shutil.rmtree(dst)
     os.makedirs(dst)
 
     for sample_idx, each_sample in enumerate(train_data['multi_spk_wav_list']):
-        for each_spk in each_sample.keys():
+        for each_spk in list(each_sample.keys()):
             this_spk = each_spk
             wav_genTrue = each_sample[this_spk]
             # min_len = 39936

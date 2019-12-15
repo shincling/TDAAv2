@@ -17,7 +17,7 @@ class _LRScheduler(object):
                 if 'initial_lr' not in group:
                     raise KeyError("param 'initial_lr' is not specified "
                                    "in param_groups[{}] when resuming an optimizer".format(i))
-        self.base_lrs = list(map(lambda group: group['initial_lr'], optimizer.param_groups))
+        self.base_lrs = list([group['initial_lr'] for group in optimizer.param_groups])
         self.step(last_epoch + 1)
         self.last_epoch = last_epoch
 
@@ -301,8 +301,8 @@ class ReduceLROnPlateau(object):
             if old_lr - new_lr > self.eps:
                 param_group['lr'] = new_lr
                 if self.verbose:
-                    print('Epoch {:5d}: reducing learning rate'
-                          ' of group {} to {:.4e}.'.format(epoch, i, new_lr))
+                    print(('Epoch {:5d}: reducing learning rate'
+                          ' of group {} to {:.4e}.'.format(epoch, i, new_lr)))
 
     @property
     def in_cooldown(self):

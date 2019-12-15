@@ -137,7 +137,7 @@ if __name__ == '__main__':
 
     wav_loss = WaveLoss(dBscale=1, nfft=256, hop_size=128)
     loss = wav_loss(target_spec_tensor, target_phase_tensor, pred_spec_tensor, pred_phase_tensor)
-    print('loss', loss.item())
+    print(('loss', loss.item()))
 
     wav1 = torch.FloatTensor(wav1)
     torch_stft_matrix = torch.stft(wav1, n_fft=256, hop_length=128, window=torch.hann_window(256))

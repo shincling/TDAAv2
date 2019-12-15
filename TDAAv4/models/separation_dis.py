@@ -59,7 +59,7 @@ class ATTENTION(nn.Module):
             mask = F.sigmoid(energy)
             return mask
         else:
-            print
+            print()
             'NO this attention methods.'
             raise IndexError
 
@@ -106,11 +106,11 @@ class MIX_SPEECH_CNN(nn.Module):
         self.bn15 = nn.BatchNorm2d(8)
 
     def forward(self, x):
-        print
+        print()
         'speech input size:', x.size()
         assert len(x.size()) == 3
         x = x.unsqueeze(1)
-        print
+        print()
         '\nSpeech layer log:'
         x = x.contiguous()
         for idx in range(self.num_cnns):
@@ -118,11 +118,11 @@ class MIX_SPEECH_CNN(nn.Module):
             bn_layer = eval('self.bn{}'.format(idx + 1))
             x = F.relu(cnn_layer(x))
             x = bn_layer(x)
-            print
+            print()
             'speech shape after CNNs:', idx, '', x.size()
 
         out = x.transpose(1, 3).transpose(1, 2).contiguous()
-        print
+        print()
         'speech output size:', out.size()
         return out, out
 
@@ -175,10 +175,10 @@ class Discriminator(nn.Module):
         spec = F.relu(self.cnn1(spec))
         spec = F.relu(self.cnn2(spec))
         spec = spec.view(bs * topk, -1)
-        print
+        print()
         'size spec:', spec.size()
         score = F.sigmoid(self.final(spec))
-        print
+        print()
         'size spec:', score.size()
         return score
 
@@ -225,7 +225,7 @@ class SS(nn.Module):
         self.speech_fre = speech_fre
         self.mix_speech_len = mix_speech_len
         self.num_labels = num_labels
-        print
+        print()
         'Begin to build the maim model for speech speration part.'
         if config.speech_cnn_net:
             self.mix_hidden_layer_3d = MIX_SPEECH_CNN(config, speech_fre, mix_speech_len)
@@ -235,7 +235,7 @@ class SS(nn.Module):
         self.att_speech_layer = ATTENTION(config.EMBEDDING_SIZE, config.SPK_EMB_SIZE, config.ATT_SIZE, 'align')
         if self.config.is_SelfTune:
             self.adjust_layer = ADDJUST(config, 2 * config.HIDDEN_UNITS, config.SPK_EMB_SIZE)
-            print
+            print()
             'Adopt adjust layer.'
         # self.dis_layer=Discriminator()
         # print self.att_speech_layer

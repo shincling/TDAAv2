@@ -67,7 +67,7 @@ torch.manual_seed(opt.seed)
 
 # checkpoint
 if opt.restore:
-    print('loading checkpoint...\n', opt.restore)
+    print(('loading checkpoint...\n', opt.restore))
     checkpoints = torch.load(opt.restore,map_location={'cuda:2':'cuda:0'})
 
 # cuda
@@ -100,7 +100,7 @@ mix_speech_len = total_frames
 config.mix_speech_len = total_frames
 num_labels = len(spk_all_list)
 del spk_global_gen
-print('loading the global setting cost: %.3f' % (time.time() - start_time))
+print(('loading the global setting cost: %.3f' % (time.time() - start_time)))
 
 # model
 print('building model...\n')
@@ -141,13 +141,13 @@ else:
     log_path = config.log + opt.log + '/'
 if not os.path.exists(log_path):
     os.mkdir(log_path)
-print('log_path:',log_path)
+print(('log_path:',log_path))
 
 writer=SummaryWriter(log_path)
 
 logging = utils.logging(log_path + 'log.txt')  # 单独写一个logging的函数，直接调用，既print，又记录到Log文件里。
 logging_csv = utils.logging_csv(log_path + 'record.csv')
-for k, v in config.items():
+for k, v in list(config.items()):
     logging("%s:\t%s\n" % (str(k), str(v)))
 logging("\n")
 logging(repr(model) + "\n\n")
@@ -165,13 +165,13 @@ total_loss_sgm, total_loss_ss = 0, 0
 report_total, report_correct = 0, 0
 report_vocab, report_tot_vocab = 0, 0
 scores = [[] for metric in config.metric]
-scores = collections.OrderedDict(zip(config.metric, scores))
+scores = collections.OrderedDict(list(zip(config.metric, scores)))
 best_SDR = 0.0
 e=0
 
 # train
 global_par_dict={
-    'title': u'SS WSJ0 v0.4 focal 3layers',
+    'title': 'SS WSJ0 v0.4 focal 3layers',
     'updates': updates,
     'batch_size': config.batch_size,
     'WFM': config.WFM,
@@ -186,7 +186,7 @@ global_par_dict={
     'score fnc': opt.score_fc,
 }
 # lera.log_hyperparams(global_par_dict)
-for item in global_par_dict.keys():
+for item in list(global_par_dict.keys()):
     writer.add_text( item, str(global_par_dict[item]))
 
 
@@ -199,7 +199,7 @@ def train(epoch):
 
     if config.schedule and scheduler.get_lr()[0]>5e-5:
         scheduler.step()
-        print("Decaying learning rate to %g" % scheduler.get_lr()[0])
+        print(("Decaying learning rate to %g" % scheduler.get_lr()[0]))
 
     if opt.model == 'gated':
         model.current_epoch = epoch
@@ -211,8 +211,8 @@ def train(epoch):
         # train_data = train_data_gen.next()
         train_data = next(train_data_gen)
         if train_data == False:
-            print('SDR_aver_epoch:', SDR_SUM.mean())
-            print('SDRi_aver_epoch:', SDRi_SUM.mean())
+            print(('SDR_aver_epoch:', SDR_SUM.mean()))
+            print(('SDRi_aver_epoch:', SDRi_SUM.mean()))
             break  # 如果这个epoch的生成器没有数据了，直接进入下一个epoch
 
         src = Variable(torch.from_numpy(train_data['mix_feas']))
@@ -258,7 +258,7 @@ def train(epoch):
             sgm_loss, num_total, num_correct = model.module.compute_loss(outputs, targets, opt.memory)
         else:
             sgm_loss, num_total, num_correct = model.compute_loss(outputs, targets, opt.memory)
-        print('loss for SGM,this batch:', sgm_loss.cpu().item())
+        print(('loss for SGM,this batch:', sgm_loss.cpu().item()))
         writer.add_scalars('scalar/loss',{'sgm_loss':sgm_loss.cpu().item()},updates)
 
         src = src.transpose(0, 1)
@@ -281,7 +281,7 @@ def train(epoch):
             else:
                 ss_loss = model.separation_loss(x_input_map_multi, multi_mask, feas_tgt)
 
-        print('loss for SS,this batch:', ss_loss.cpu().item())
+        print(('loss for SS,this batch:', ss_loss.cpu().item()))
         writer.add_scalars('scalar/loss',{'ss_loss':ss_loss.cpu().item()},updates)
 
 
@@ -316,8 +316,8 @@ def train(epoch):
             writer.add_scalars('scalar/loss',{'SDR_sample':sdr_aver_batch,'SDRi_sample':sdri_aver_batch},updates)
             SDR_SUM = np.append(SDR_SUM, sdr_aver_batch)
             SDRi_SUM = np.append(SDRi_SUM, sdri_aver_batch)
-            print('SDR_aver_now:', SDR_SUM.mean())
-            print('SDRi_aver_now:', SDRi_SUM.mean())
+            print(('SDR_aver_now:', SDR_SUM.mean()))
+            print(('SDRi_aver_now:', SDRi_SUM.mean()))
             #raw_input('Press to continue...')
 
         total_loss += loss.cpu().item()
@@ -340,7 +340,7 @@ def train(epoch):
         if 0 and updates % config.eval_interval == 0 and epoch > 3: #建议至少跑几个epoch再进行测试，否则模型还没学到东西，会有很多问题。
             logging("time: %6.3f, epoch: %3d, updates: %8d, train loss: %6.5f\n"
                     % (time.time() - start_time, epoch, updates, total_loss / report_total))
-            print('evaluating after %d updates...\r' % updates)
+            print(('evaluating after %d updates...\r' % updates))
             original_bs=config.batch_size
             score = eval(epoch) # eval的时候batch_size会变成1
             # print 'Orignal bs:',original_bs
@@ -374,18 +374,18 @@ def eval(epoch):
     e = epoch
     test_or_valid = 'test'
     # test_or_valid = 'valid'
-    print('Test or valid:', test_or_valid)
+    print(('Test or valid:', test_or_valid))
     eval_data_gen = prepare_data('once', test_or_valid, config.MIN_MIX, config.MAX_MIX)
     SDR_SUM = np.array([])
     SDRi_SUM = np.array([])
     batch_idx = 0
     global best_SDR, Var
     while True:
-        print('-' * 30)
+        print(('-' * 30))
         eval_data =next(eval_data_gen)
         if eval_data == False:
-            print('SDR_aver_eval_epoch:', SDR_SUM.mean())
-            print('SDRi_aver_eval_epoch:', SDRi_SUM.mean())
+            print(('SDR_aver_eval_epoch:', SDR_SUM.mean()))
+            print(('SDRi_aver_eval_epoch:', SDRi_SUM.mean()))
             break  # 如果这个epoch的生成器没有数据了，直接进入下一个epoch
         src = Variable(torch.from_numpy(eval_data['mix_feas']))
 
@@ -452,7 +452,7 @@ def eval(epoch):
                 ss_loss = model.module.separation_loss(x_input_map_multi, predicted_masks, feas_tgt, )
             else:
                 ss_loss = model.separation_loss(x_input_map_multi, predicted_masks, feas_tgt)
-            print('loss for ss,this batch:', ss_loss.cpu().item())
+            print(('loss for ss,this batch:', ss_loss.cpu().item()))
             # lera.log({
             #     'ss_loss_' + test_or_valid: ss_loss.cpu().item(),
             # })
@@ -475,14 +475,14 @@ def eval(epoch):
                 SDR_SUM = np.append(SDR_SUM, sdr_aver_batch)
                 SDRi_SUM = np.append(SDRi_SUM, sdri_aver_batch)
             except:# AssertionError,wrong_info:
-                print('Errors in calculating the SDR',wrong_info)
-            print('SDR_aver_now:', SDR_SUM.mean())
-            print('SDRi_aver_now:', SDRi_SUM.mean())
+                print(('Errors in calculating the SDR',wrong_info))
+            print(('SDR_aver_now:', SDR_SUM.mean()))
+            print(('SDRi_aver_now:', SDRi_SUM.mean()))
             # lera.log({'SDR sample'+test_or_valid: SDR_SUM.mean()})
             # lera.log({'SDRi sample'+test_or_valid: SDRi_SUM.mean()})
             # raw_input('Press any key to continue......')
         elif batch_idx == (500 / config.batch_size) + 1 and SDR_SUM.mean() > best_SDR:  # only record the best SDR once.
-            print('Best SDR from {}---->{}'.format(best_SDR, SDR_SUM.mean()))
+            print(('Best SDR from {}---->{}'.format(best_SDR, SDR_SUM.mean())))
             best_SDR = SDR_SUM.mean()
             # save_model(log_path+'checkpoint_bestSDR{}.pt'.format(best_SDR))
 
@@ -490,18 +490,18 @@ def eval(epoch):
         candidate += [convertToLabels(dict_idx2spk, s, dict_spk2idx['<EOS>']) for s in samples]
         # source += raw_src
         reference += raw_tgt
-        print('samples:', samples)
-        print('can:{}, \nref:{}'.format(candidate[-1 * config.batch_size:], reference[-1 * config.batch_size:]))
+        print(('samples:', samples))
+        print(('can:{}, \nref:{}'.format(candidate[-1 * config.batch_size:], reference[-1 * config.batch_size:])))
         alignments += [align for align in alignment]
         batch_idx += 1
-        input('Press any key to continue......')
+        eval(input('Press any key to continue......'))
 
     score = {}
     result = utils.eval_metrics(reference, candidate, dict_spk2idx, log_path)
     logging_csv([e, updates, result['hamming_loss'], \
                  result['micro_f1'], result['micro_precision'], result['micro_recall']])
-    print('hamming_loss: %.8f | micro_f1: %.4f'
-          % (result['hamming_loss'], result['micro_f1']))
+    print(('hamming_loss: %.8f | micro_f1: %.4f'
+          % (result['hamming_loss'], result['micro_f1'])))
     score['hamming_loss'] = result['hamming_loss']
     score['micro_f1'] = result['micro_f1']
     return score

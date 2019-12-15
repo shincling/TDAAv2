@@ -243,7 +243,7 @@ class seq2seq(nn.Module):
         # (3) Package everything up.
         allHyps, allScores, allAttn, allHiddens, allEmbs = [], [], [], [], []
 
-        ind = range(batch_size)
+        ind = list(range(batch_size))
         for j in ind:
             b = beam[j]
             n_best = 1
@@ -292,7 +292,7 @@ class seq2seq(nn.Module):
                     predicted_maps = self.ss_model(mix_wav,ss_embs[1:].transpose(0,1))
             elif self.config.global_hidden:
                 ss_hidden = Variable(torch.stack(allHiddens, 0).transpose(0, 1))  # to [decLen, bs, dim]
-                print(ss_hidden.shape)
+                print((ss_hidden.shape))
 
                 predicted_maps = self.ss_model(src,ss_hidden[1:, :], tgt[1:-1], dict_spk2idx)
             elif self.config.top1:
