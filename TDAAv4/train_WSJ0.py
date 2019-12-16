@@ -10,6 +10,8 @@ import torch.nn as nn
 from torch.autograd import Variable
 import torch.utils.data
 import numpy as np
+import lera
+from tensorboardX import SummaryWriter
 
 import models
 import data.utils as utils
@@ -19,7 +21,6 @@ import lr_scheduler as L
 from predata_fromList_123 import prepare_data  # 数据准备的模块
 # from predata_CN_aim import prepare_data as prepare_data_aim # 测试阶段随便一段语音的数据准备脚本
 import bss_test  # 语音分离性能评测脚本
-from tensorboardX import SummaryWriter
 
 
 # config
@@ -30,14 +31,6 @@ parser.add_argument('-config', default='config_WSJ0.yaml', type=str,
 # parser.add_argument('-gpus', default=range(4), nargs='+', type=int,
 parser.add_argument('-gpus', default=[1], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
-# parser.add_argument('-restore', default='../TDAAv2_CN/sscn_v01b_186001.pt', type=str,
-# parser.add_argument('-restore', default='TDAAv3_45001.pt', type=str,
-# parser.add_argument('-restore', default='TDAAv3_33001_nof.pt', type=str,
-# parser.add_argument('-restore', default='data/data/log/2019-09-26-17:50:48/TDAAv3_120001.pt', type=str,
-# parser.add_argument('-restore', default='data/data/log/2019-09-29-15:59:27/TDAAv3_30001.pt', type=str,
-# parser.add_argument('-restore', default='data/data/log/2019-10-02-20:32:24/TDAAv3_42001.pt', type=str,
-# parser.add_argument('-restore', default='data/data/log/2019-10-21-17:40:24/TDAAv3_4001.pt', type=str,
-# parser.add_argument('-restore', default='data/data/log/2019-10-31-20:59:11/TDAAv3_11001.pt', type=str,
 parser.add_argument('-restore', default=None, type=str,
                     help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
@@ -46,7 +39,7 @@ parser.add_argument('-model', default='seq2seq', type=str,
                     help="Model selection")
 parser.add_argument('-score', default='', type=str,
                     help="score_fn")
-parser.add_argument('-notrain', default=1, type=bool,
+parser.add_argument('-notrain', default=0, type=bool,
                     help="train or not")
 parser.add_argument('-log', default='', type=str,
                     help="log directory")
@@ -252,7 +245,7 @@ def train(epoch):
         outputs, targets, multi_mask, gamma = model(src, src_len, tgt, tgt_len,
                                              dict_spk2idx)  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
         # print('mask size:', multi_mask.size())
-        writer.add_histogram('global gamma',gamma, updates)
+        # writer.add_histogram('global gamma',gamma, updates)
 
         if 1 and len(opt.gpus) > 1:
             sgm_loss, num_total, num_correct = model.module.compute_loss(outputs, targets, opt.memory)
@@ -529,4 +522,3 @@ def main():
 if __name__ == '__main__':
     # freeze_support()
     main()
-    import lera

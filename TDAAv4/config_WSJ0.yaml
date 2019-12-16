@@ -2,7 +2,7 @@
 data:  './data/data/save_data'
 log:  './data/data/log/'
 epoch:  300 #epoch总数
-batch_size: 1
+batch_size: 2
 param_init:  0.1
 optim:  'adam'
 loss: 'focal_loss'
@@ -36,7 +36,7 @@ top1: 1 #控制是否用top-1的方法来生产第二个通道
 ct_recu: 0 #控制是否采用att递减的ct构成
 
 
-use_tas: 1
+use_tas: 0
 all_soft: 0 # 这个是决定global emb是不是全用soft的
 
 global_emb:  1

@@ -5,6 +5,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 # import data.dict as dict
 import models
+# from models.transformer import *
 # from figure_hot import relitu_line
 
 import numpy as np
@@ -20,12 +21,14 @@ class seq2seq(nn.Module):
         else:
             src_embedding = None
             tgt_embedding = None
-        self.encoder = models.rnn_encoder(config, input_emb_size, None, embedding=src_embedding)
-        if config.shared_vocab == False:
-            self.decoder = models.rnn_decoder(config, tgt_vocab_size, embedding=tgt_embedding, score_fn=score_fn)
-        else:
-            self.decoder = models.rnn_decoder(config, tgt_vocab_size, embedding=self.encoder.embedding,
-                                              score_fn=score_fn)
+        # self.encoder = models.rnn_encoder(config, input_emb_size, None, embedding=src_embedding)
+        self.encoder = models.TransEncoder(config, input_emb_size)
+        self.decoder = models.TransDecoder(config, sos_id=0, eos_id=tgt_vocab_size-1, n_tgt_vocab=tgt_vocab_size)
+        # if config.shared_vocab == False:
+        #     self.decoder = models.rnn_decoder(config, tgt_vocab_size, embedding=tgt_embedding, score_fn=score_fn)
+        # else:
+        #     self.decoder = models.rnn_decoder(config, tgt_vocab_size, embedding=self.encoder.embedding,
+        #                                       score_fn=score_fn)
         self.use_cuda = use_cuda
         self.tgt_vocab_size = tgt_vocab_size
         self.config = config
@@ -73,9 +76,14 @@ class seq2seq(nn.Module):
         # tgt = torch.index_select(tgt, dim=0, index=indices)
 
         src = src.transpose(0, 1)
+        tgt = tgt.transpose(0, 1) # convert to bs, output_len
         if mix_wav is not None:
             mix_wav=mix_wav.transpose(0,1)
-        contexts, state = self.encoder(src, lengths.data.tolist())  # context是：（max_len,batch_size,hidden_size×2方向）这么大
+        contexts, *_ = self.encoder(src, lengths.data.tolist())  # context是：（max_len,batch_size,hidden_size×2方向）这么大
+        pred, gold, outputs = self.decoder(tgt[:,1:-1], contexts, lengths.data.tolist())
+        predicted_maps = self.ss_model(src, outputs[:-1, :], tgt.transpose(0,1)[1:-1], dict_spk2idx)
+        return outputs, tgt[1:], predicted_maps.transpose(0, 1), None
+
         if not self.config.global_emb:
             # outputs, final_state, embs = self.decoder(tgt[:-1], state, contexts.transpose(0, 1))
             outputs, final_state, embs, gamma = self.decoder(tgt, state, contexts.transpose(0, 1))
@@ -303,3 +311,7 @@ class seq2seq(nn.Module):
         if self.config.top1:
             predicted_maps = predicted_maps[:,0:1] #bs,1,len
         return allHyps, allAttn, allHiddens, predicted_maps  # .transpose(0,1)
+
+
+if __name__ == '__main__':
+    model=seq2seq()
