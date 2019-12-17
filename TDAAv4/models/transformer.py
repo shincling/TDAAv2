@@ -364,28 +364,7 @@ class TransDecoder(nn.Module):
         return pred, gold, dec_output
 
     def compute_score(self, hiddens,targets):
-        if self.score_fn.startswith('general'):
-            if self.score_fn.endswith('not'):
-                scores = torch.matmul(self.linear(hiddens), Variable(self.embedding.weight.t().data))
-            else:
-                scores = torch.matmul(self.linear(hiddens), self.embedding.weight.t())
-        elif self.score_fn.startswith('concat'):
-            if self.score_fn.endswith('not'):
-                scores = self.linear_v(torch.tanh(self.linear_query(hiddens).unsqueeze(1) + \
-                                                  self.linear_weight(Variable(self.embedding.weight.data)).unsqueeze(
-                                                      0))).squeeze(2)
-            else:
-                scores = self.linear_v(torch.tanh(self.linear_query(hiddens).unsqueeze(1) + \
-                                                  self.linear_weight(self.embedding.weight).unsqueeze(0))).squeeze(2)
-        elif self.score_fn.startswith('dot'):
-            if self.score_fn.endswith('not'):
-                scores = torch.matmul(hiddens, Variable(self.embedding.weight.t().data))
-            else:
-                scores = torch.matmul(hiddens, self.embedding.weight.t())
-        elif self.score_fn.startswith('arc_margin'):
-            scores = self.linear(hiddens,targets)
-        else:
-            scores = self.linear(hiddens)
+        scores = self.tgt_word_prj(hiddens)
         return scores
 
     def sample(self, input, init_state, contexts):

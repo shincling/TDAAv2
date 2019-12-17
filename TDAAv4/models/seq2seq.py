@@ -81,7 +81,8 @@ class seq2seq(nn.Module):
             mix_wav=mix_wav.transpose(0,1)
         contexts, *_ = self.encoder(src, lengths.data.tolist())  # context是：（max_len,batch_size,hidden_size×2方向）这么大
         pred, gold, outputs = self.decoder(tgt[:,1:-1], contexts, lengths.data.tolist())
-        predicted_maps = self.ss_model(src, outputs[:-1, :], tgt.transpose(0,1)[1:-1], dict_spk2idx)
+        tgt = tgt.transpose(0, 1) # convert to output_len(2+2), bs
+        predicted_maps = self.ss_model(src, outputs[:-1, :], tgt[1:-1], dict_spk2idx)
         return outputs, tgt[1:], predicted_maps.transpose(0, 1), None
 
         if not self.config.global_emb:

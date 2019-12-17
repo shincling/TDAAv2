@@ -24,12 +24,12 @@ import bss_test  # 语音分离性能评测脚本
 
 
 # config
-parser = argparse.ArgumentParser(description='train_CN.py')
+parser = argparse.ArgumentParser(description='train_WSJ0.py')
 
 parser.add_argument('-config', default='config_WSJ0.yaml', type=str,
                     help="config file")
 # parser.add_argument('-gpus', default=range(4), nargs='+', type=int,
-parser.add_argument('-gpus', default=[1], nargs='+', type=int,
+parser.add_argument('-gpus', default=[0,1], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
 parser.add_argument('-restore', default=None, type=str,
                     help="restore checkpoint")
@@ -167,7 +167,7 @@ best_SDR = 0.0
 
 # train
 global_par_dict={
-    'title': str('SS WSJ0 v0.5 focal 4layers'),
+    'title': str('TDAAv4 Transformer focal 4layers'),
     'updates': updates,
     'batch_size': config.batch_size,
     'WFM': config.WFM,
