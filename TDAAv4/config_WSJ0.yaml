@@ -2,7 +2,7 @@
 data:  './data/data/save_data'
 log:  './data/data/log/'
 epoch:  300 #epoch总数
-batch_size: 2
+batch_size: 10
 param_init:  0.1
 optim:  'adam'
 loss: 'focal_loss'
@@ -22,8 +22,8 @@ decoder_hidden_size:  512
 num_layers:  4
 dropout:  0.5
 max_tgt_len:  5
-eval_interval:  1000
-save_interval:  1000
+eval_interval:  3000
+save_interval:  3000
 max_generator_batches:  32
 metric:  ['hamming_loss', 'micro_f1']
 shared_vocab:  0
@@ -109,7 +109,7 @@ FRAME_LENGTH: 256
 # 帧移(ms)
 FRAME_SHIFT:  64
 # 是否shuffle_batch,由于现在都是随机采样，这个参数没有意义了
-SHUFFLE_BATCH:  1
+SHUFFLE_BATCH:  0
 voice_dB: 2.5 # 配置从-db～db的随机音量大小变换
 noise_dB: -10 # 从noise——db 到 0 的噪音变换
 normalize: 1 #是否波形归一化
@@ -117,7 +117,8 @@ normalize: 1 #是否波形归一化
 MIN_LEN:  40000
 #MAX_LEN :  FRAME_RATE*MAX_LEN
 #MAX_LEN :  160000
-MAX_LEN:  48000 # 6s 避免多的无人声区域
+MAX_LEN_limit:  64000 # 8s最长的 避免多的无人声区域
+MAX_LEN_limit:  6400000 # 8s最长的 避免多的无人声区域
 # 帧长
 WINDOWS:  FRAME_LENGTH
 START_EALY_STOP:  0

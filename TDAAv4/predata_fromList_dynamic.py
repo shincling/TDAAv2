@@ -186,6 +186,8 @@ def prepare_data(mode, train_or_test, min=None, max=None):
             # while True:
             mix_len = 0 #用来弄每个batch的实时最大
             config.MAX_LEN=int(np.max(all_lens_list[mix_k][:config.batch_size])/2) # 第一个batch的最大长度
+            max_len_tmp = config.MAX_LEN
+            config.MAX_LEN = config.MAX_LEN_limit if config.MAX_LEN>config.MAX_LEN_limit else config.MAX_LEN # 限定到一个最长的
             print('Max len for this batch:',config.MAX_LEN)
             mix_speechs = np.zeros((config.batch_size, config.MAX_LEN))
             for ___ in range(number_samples_all):
@@ -268,12 +270,11 @@ def prepare_data(mode, train_or_test, min=None, max=None):
                         # 如果频率不是设定的频率则需要进行转换
                         signal = resampy.resample(signal, rate, config.FRAME_RATE, filter='kaiser_best')
                         print(k,'wav length:',signal.shape[0])
-                    if signal.shape[0] > config.MAX_LEN:  # 根据最大长度裁剪
-                        raise AssertionError
-                        signal = signal[:config.MAX_LEN]
-                    # 更新混叠语音长度
+                    # 更新真正的混叠语音长度
                     if signal.shape[0] > mix_len:
                         mix_len = signal.shape[0]
+                    if signal.shape[0] > config.MAX_LEN:  # 根据最大长度裁剪
+                        signal = signal[:config.MAX_LEN]
 
                     signal -= np.mean(signal)  # 语音信号预处理，先减去均值
                     signal /= np.max(np.abs(signal))  # 波形幅值预处理，幅值归一化
@@ -378,7 +379,8 @@ def prepare_data(mode, train_or_test, min=None, max=None):
                     elif mode == 'tasnet':
                         yield _collate_fn(mix_speechs,multi_spk_wav_list)
 
-                    assert mix_len==config.MAX_LEN # 确认这个batch最大的len跟之前统计的一致
+                    assert mix_len==max_len_tmp# 确认这个batch最大的len跟之前统计的一致
+                    print('Max len this batch:', config.MAX_LEN, 'max_len_origninal:',max_len_tmp)
                     mix_len = 0
                     batch_idx = 0
                     mix_feas = []  # 应该是bs,n_frames,n_fre这么多
@@ -390,6 +392,8 @@ def prepare_data(mode, train_or_test, min=None, max=None):
                     multi_spk_fea_list = []
                     multi_spk_wav_list = []
                     config.MAX_LEN = int(np.max(all_lens_list[mix_k][sample_idx[mix_k]+1:(sample_idx[mix_k]+config.batch_size+1)])/2)  # 接下来一个batch的最大长度
+                    max_len_tmp = config.MAX_LEN
+                    config.MAX_LEN = config.MAX_LEN_limit if config.MAX_LEN > config.MAX_LEN_limit else config.MAX_LEN  # 限定到一个最长的
                     mix_speechs = np.zeros((config.batch_size, config.MAX_LEN))
                 sample_idx[mix_k] += 1
 
