@@ -19,6 +19,7 @@ from optims import Optim
 import lr_scheduler as L
 # from predata_CN import prepare_data  # 数据准备的模块
 from predata_fromList_123 import prepare_data  # 数据准备的模块
+# from predata_fromList_dynamic import prepare_data  # 数据准备的模块
 # from predata_CN_aim import prepare_data as prepare_data_aim # 测试阶段随便一段语音的数据准备脚本
 import bss_test  # 语音分离性能评测脚本
 
@@ -29,7 +30,7 @@ parser = argparse.ArgumentParser(description='train_WSJ0.py')
 parser.add_argument('-config', default='config_WSJ0.yaml', type=str,
                     help="config file")
 # parser.add_argument('-gpus', default=range(4), nargs='+', type=int,
-parser.add_argument('-gpus', default=[0,1], nargs='+', type=int,
+parser.add_argument('-gpus', default=[2,3], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
 parser.add_argument('-restore', default=None, type=str,
                     help="restore checkpoint")
@@ -244,7 +245,7 @@ def train(epoch):
 
         outputs, targets, multi_mask, gamma = model(src, src_len, tgt, tgt_len,
                                              dict_spk2idx)  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
-        # print('mask size:', multi_mask.size())
+        print('mask size:', multi_mask.size())
         # writer.add_histogram('global gamma',gamma, updates)
 
         if 1 and len(opt.gpus) > 1:

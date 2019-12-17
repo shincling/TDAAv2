@@ -145,7 +145,7 @@ class MIX_SPEECH(nn.Module):
 
     def forward(self, x):
         x, hidden = self.layer(x)
-        batch_size = x.size()[0]
+        batch_size, self.mix_speech_len = x.size()[:2]
         x = x.contiguous()
         xx = x
         x = x.view(batch_size * self.mix_speech_len, -1)

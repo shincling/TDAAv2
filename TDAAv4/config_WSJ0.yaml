@@ -117,8 +117,8 @@ normalize: 1 #是否波形归一化
 MIN_LEN:  40000
 #MAX_LEN :  FRAME_RATE*MAX_LEN
 #MAX_LEN :  160000
-MAX_LEN_limit:  64000 # 8s最长的 避免多的无人声区域
-MAX_LEN_limit:  6400000 # 8s最长的 避免多的无人声区域
+MAX_LEN:  48000 # 8s最长的 避免多的无人声区域
+#MAX_LEN_limit:  6400000 # 设置一个非常大的只，就等于没有限制了
 # 帧长
 WINDOWS:  FRAME_LENGTH
 START_EALY_STOP:  0
