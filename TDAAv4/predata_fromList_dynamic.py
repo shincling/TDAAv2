@@ -8,7 +8,6 @@ import resampy
 import librosa
 import argparse
 import data.utils as utils
-import models
 
 # Add the config.
 parser = argparse.ArgumentParser(description='predata scripts.')
@@ -18,7 +17,7 @@ parser.add_argument('-config', default='config_WSJ0.yaml', type=str,
 opt = parser.parse_args()
 config = utils.read_config(opt.config)
 # config.batch_size=100
-config.MAX_LEN=160000# 20s for 8K
+# config.MAX_LEN=160000# 20s for 8K
 
 channel_first = config.channel_first
 np.random.seed(1)  # 设定种子
@@ -64,7 +63,6 @@ Returns:
     mixtures, sources = mix_data,source_data
     if raw_tgt is None: #如果没有给定顺序
         raw_tgt = [sorted(spk.keys()) for spk in source_data]
-    # sources= models.rank_feas(raw_tgt, source_data,out_type='numpy')  # 这里是目标的图谱,aim_size,wav_len
     sources=[]
     for each_feas, each_line in zip(source_data, raw_tgt):
         sources.append(np.stack([each_feas[spk] for spk in each_line]))
@@ -125,7 +123,6 @@ def prepare_data(mode, train_or_test, min=None, max=None):
     if max:
         config.MAX_MIX = max
 
-    mix_speechs = np.zeros((config.batch_size, config.MAX_LEN))
     mix_feas = []  # 应该是bs,n_frames,n_fre这么多
     mix_phase = []  # 应该是bs,n_frames,n_fre这么多
     aim_fea = []  # 应该是bs,n_frames,n_fre这么多
@@ -151,6 +148,7 @@ def prepare_data(mode, train_or_test, min=None, max=None):
             batch_idx = 0
             list_path = '../../DL4SS_Keras/TDAA_beta/create-speaker-mixtures/'
             all_samples_list = {}
+            all_lens_list = {}
             sample_idx = {}
             number_samples = {}
             batch_mix = {}
@@ -159,15 +157,21 @@ def prepare_data(mode, train_or_test, min=None, max=None):
             for mix_k in mix_number_list:
                 if train_or_test == 'train':
                     aim_list_path = list_path + 'mix_{}_spk_tr.txt'.format(mix_k)
+                    aim_len_list_path = list_path + 'mix_{}_spk_tr_lenInfo.txt2'.format(mix_k)
                 if train_or_test == 'valid':
                     aim_list_path = list_path + 'mix_{}_spk_cv.txt'.format(mix_k)
+                    aim_len_list_path = list_path + 'mix_{}_spk_cv_lenInfo.txt2'.format(mix_k)
                 if train_or_test == 'test':
                     aim_list_path = list_path + 'mix_{}_spk_tt.txt'.format(mix_k)
+                    aim_len_list_path = list_path + 'mix_{}_spk_tt_lenInfo.txt2'.format(mix_k)
 
-                all_samples_list[mix_k] = open(aim_list_path).readlines()  # [:31]
+                all_samples_list[mix_k] = open(aim_list_path).readlines() # [:31]
                 number_samples[mix_k] = len(all_samples_list[mix_k])
                 batch_mix[mix_k] = len(all_samples_list[mix_k]) / config.batch_size
                 number_samples_all += len(all_samples_list[mix_k])
+
+                all_lens_list[mix_k] = [int(i) for i in open(aim_len_list_path).readlines()]
+                assert len(all_lens_list[mix_k])==len(all_samples_list[mix_k])
 
                 sample_idx[mix_k] = 0  # 每个通道从0开始计数
 
@@ -180,11 +184,14 @@ def prepare_data(mode, train_or_test, min=None, max=None):
 
             mix_k = random.sample(mix_number_list, 1)[0]
             # while True:
+            mix_len = 0 #用来弄每个batch的实时最大
+            config.MAX_LEN=int(np.max(all_lens_list[mix_k][:config.batch_size])/2) # 第一个batch的最大长度
+            print('Max len for this batch:',config.MAX_LEN)
+            mix_speechs = np.zeros((config.batch_size, config.MAX_LEN))
             for ___ in range(number_samples_all):
                 if ___ == number_samples_all - 1:
                     print('ends here.___')
                     yield False
-                mix_len = 0
                 print((mix_k, 'mixed sample_idx[mix_k]:', sample_idx[mix_k], batch_idx))
                 if sample_idx[mix_k] >= batch_mix[mix_k] * config.batch_size:
                     print((mix_k, 'mixed data is over~trun to the others number.'))
@@ -260,7 +267,9 @@ def prepare_data(mode, train_or_test, min=None, max=None):
                     if rate != config.FRAME_RATE:
                         # 如果频率不是设定的频率则需要进行转换
                         signal = resampy.resample(signal, rate, config.FRAME_RATE, filter='kaiser_best')
+                        print(k,'wav length:',signal.shape[0])
                     if signal.shape[0] > config.MAX_LEN:  # 根据最大长度裁剪
+                        raise AssertionError
                         signal = signal[:config.MAX_LEN]
                     # 更新混叠语音长度
                     if signal.shape[0] > mix_len:
@@ -369,8 +378,9 @@ def prepare_data(mode, train_or_test, min=None, max=None):
                     elif mode == 'tasnet':
                         yield _collate_fn(mix_speechs,multi_spk_wav_list)
 
+                    assert mix_len==config.MAX_LEN # 确认这个batch最大的len跟之前统计的一致
+                    mix_len = 0
                     batch_idx = 0
-                    mix_speechs = np.zeros((config.batch_size, config.MAX_LEN))
                     mix_feas = []  # 应该是bs,n_frames,n_fre这么多
                     mix_phase = []
                     aim_fea = []  # 应该是bs,n_frames,n_fre这么多
@@ -379,6 +389,8 @@ def prepare_data(mode, train_or_test, min=None, max=None):
                     query = []  # 应该是batch_size，shape(query)的形式，用list再转换把
                     multi_spk_fea_list = []
                     multi_spk_wav_list = []
+                    config.MAX_LEN = int(np.max(all_lens_list[mix_k][sample_idx[mix_k]+1:(sample_idx[mix_k]+config.batch_size+1)])/2)  # 接下来一个batch的最大长度
+                    mix_speechs = np.zeros((config.batch_size, config.MAX_LEN))
                 sample_idx[mix_k] += 1
 
         else:
