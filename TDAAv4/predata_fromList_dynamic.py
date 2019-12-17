@@ -262,14 +262,14 @@ def prepare_data(mode, train_or_test, min=None, max=None):
                         spk_speech_path = data_path + '/' + 'eval_test' + '/' + spk + '/' + sample_name + '.wav'
 
                     signal, rate = sf.read(spk_speech_path)  # signal 是采样值，rate 是采样频率
-                    print((k,'wav length:',signal.shape[0]/float(rate)))
+                    # print((k,'wav length:',signal.shape[0]/float(rate)))
                     train_len.append(signal.shape[0])
                     if len(signal.shape) > 1:
                         signal = signal[:, 0]
                     if rate != config.FRAME_RATE:
                         # 如果频率不是设定的频率则需要进行转换
                         signal = resampy.resample(signal, rate, config.FRAME_RATE, filter='kaiser_best')
-                        print(k,'wav length:',signal.shape[0])
+                        # print(k,'wav length:',signal.shape[0])
                     # 更新真正的混叠语音长度
                     if signal.shape[0] > mix_len:
                         mix_len = signal.shape[0]

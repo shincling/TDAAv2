@@ -253,6 +253,7 @@ class SS(nn.Module):
         '''
 
         config = self.config
+        self.mix_speech_len=mix_feas.size()[1]
         top_k_max, batch_size = targets.size()  # 这个top_k_max其实就是最多有几个说话人，应该是跟Max_MIX是保持一样的
         # assert top_k_max==config.MAX_MIX
         aim_list = (targets.transpose(0, 1).contiguous().view(-1) != dict_spk2idx['<EOS>']).nonzero().squeeze()
