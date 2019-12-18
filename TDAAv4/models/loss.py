@@ -21,6 +21,58 @@ def rank_feas(raw_tgt, feas_list, out_type='torch'):
     else:
         return torch.from_numpy(np.array(final_num))
 
+def cal_performance(hidden_outputs, decoder, targets, criterion, config, sim_score=0, smoothing=0.1):
+    """Calculate cross entropy loss, apply label smoothing if needed.
+    Args:
+        targets:  T x N xC, score before softmax 注意这个顺序
+        gold: N x T
+    """
+    batch_size= targets.size()[1]
+    targets=targets.view(-1)
+    outputs = hidden_outputs.contiguous().view(-1, hidden_outputs.size(2))
+    scores = decoder.compute_score(outputs,targets.view(-1))
+
+    loss = cal_loss(scores,targets, smoothing)
+    pred = scores.max(1)[1]
+    print('Pred,Gold\n', pred,'\n',targets)
+
+    num_correct = pred.data.eq(targets.data).masked_select(targets.ne(dict.PAD).data).sum()
+    # num_correct = pred.data.eq(targets.data).masked_select(targets.ne(targets[-1]).data).sum()
+    num_total = targets.ne(dict.PAD).data.sum().float()
+    loss *= batch_size
+    loss = loss.div(num_total) #不能再除一次跟batch_size相关的的东西了
+
+    return loss, num_total, num_correct
+
+def cal_loss(pred, gold, smoothing=0.0):
+    """Calculate cross entropy loss, apply label smoothing if needed.
+    """
+
+    IGNORE_ID=-1
+    if smoothing > 0.0:
+        eps = smoothing
+        n_class = pred.size(1)
+
+        # Generate one-hot matrix: N x C.
+        # Only label position is 1 and all other positions are 0
+        # gold include -1 value (IGNORE_ID) and this will lead to assert error
+        gold_for_scatter = gold.ne(IGNORE_ID).long() * gold
+        one_hot = torch.zeros_like(pred).scatter(1, gold_for_scatter.view(-1, 1), 1)
+        one_hot = one_hot * (1 - eps) + (1 - one_hot) * eps / n_class
+        log_prb = F.log_softmax(pred, dim=1)
+
+        non_pad_mask = gold.ne(IGNORE_ID)
+        n_word = non_pad_mask.sum().item()
+        loss = -(one_hot * log_prb).sum(dim=1)
+        loss = loss.masked_select(non_pad_mask).sum() / n_word
+    else:
+        loss = F.cross_entropy(pred, gold,
+                               ignore_index=IGNORE_ID,
+                               reduction='elementwise_mean')
+
+    return loss
+
+
 
 def criterion(tgt_vocab_size, use_cuda,loss):
     weight = torch.ones(tgt_vocab_size)
@@ -62,10 +114,11 @@ def cross_entropy_loss(hidden_outputs, decoder, targets, criterion, config, sim_
     # hidden_outputs:[max_len,bs,512]
     batch_size= targets.size()[1]
     targets=targets.view(-1)
-    outputs = hidden_outputs.view(-1, hidden_outputs.size(2))
+    outputs = hidden_outputs.contiguous().view(-1, hidden_outputs.size(2))
     scores = decoder.compute_score(outputs,targets.view(-1))
     loss = criterion(scores, targets.view(-1)) + sim_score
     pred = scores.max(1)[1]
+    print('Pred,Gold', pred,targets)
     num_correct = pred.data.eq(targets.data).masked_select(targets.ne(dict.PAD).data).sum()
     # num_correct = pred.data.eq(targets.data).masked_select(targets.ne(targets[-1]).data).sum()
     num_total = targets.ne(dict.PAD).data.sum().float()

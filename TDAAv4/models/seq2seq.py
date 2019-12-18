@@ -45,6 +45,8 @@ class seq2seq(nn.Module):
             self.ss_model = models.SS(config, speech_fre, mix_speech_len, num_labels)
 
     def compute_loss(self, hidden_outputs, targets, memory_efficiency):
+        if 1:
+            return models.cal_performance(hidden_outputs, self.decoder, targets, self.criterion, self.config)
         if memory_efficiency:
             return models.memory_efficiency_cross_entropy_loss(hidden_outputs, self.decoder, targets, self.criterion,
                                                                self.config)
@@ -85,7 +87,7 @@ class seq2seq(nn.Module):
         tgt = tgt.transpose(0, 1) # convert to output_len(2+2), bs
         # predicted_maps = self.ss_model(src, outputs[:-1], tgt[1:-1], dict_spk2idx)
         predicted_maps = self.ss_model(src, outputs[:,:-1], tgt[1:-1], dict_spk2idx)
-        return outputs, tgt[1:], predicted_maps.transpose(0, 1), None
+        return outputs.transpose(0,1), tgt[1:], predicted_maps.transpose(0, 1), None
 
         if not self.config.global_emb:
             # outputs, final_state, embs = self.decoder(tgt[:-1], state, contexts.transpose(0, 1))

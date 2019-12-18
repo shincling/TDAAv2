@@ -30,8 +30,9 @@ parser = argparse.ArgumentParser(description='train_WSJ0.py')
 parser.add_argument('-config', default='config_WSJ0.yaml', type=str,
                     help="config file")
 # parser.add_argument('-gpus', default=range(4), nargs='+', type=int,
-parser.add_argument('-gpus', default=[2,3], nargs='+', type=int,
+parser.add_argument('-gpus', default=[3], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
+# parser.add_argument('-restore', default='data/data/log/2019-12-17-11:31:24/TDAAv3_21001.pt', type=str,
 parser.add_argument('-restore', default=None, type=str,
                     help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
@@ -59,7 +60,8 @@ torch.manual_seed(opt.seed)
 # checkpoint
 if opt.restore:
     print(('loading checkpoint...\n', opt.restore))
-    checkpoints = torch.load(opt.restore,map_location={'cuda:2':'cuda:0'})
+    # checkpoints = torch.load(opt.restore,map_location={'cuda:2':'cuda:0'})
+    checkpoints = torch.load(opt.restore)
 
 # cuda
 use_cuda = torch.cuda.is_available() and len(opt.gpus) > 0
@@ -277,7 +279,8 @@ def train(epoch):
         writer.add_scalars('scalar/loss',{'ss_loss':ss_loss.cpu().item()},updates)
 
 
-        loss = sgm_loss + 5 * ss_loss
+        # loss = sgm_loss + 5 * ss_loss
+        loss = sgm_loss
         if config.use_center_loss:
             loss = cen_loss*cen_alpha+ loss
 
@@ -351,7 +354,7 @@ def train(epoch):
             report_total = 0
             report_correct = 0
 
-        if updates % config.save_interval == 1:
+        if 0 and updates % config.save_interval == 1:
             save_model(log_path + 'TDAAv3_{}.pt'.format(updates))
 
 
