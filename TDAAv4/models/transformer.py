@@ -168,7 +168,7 @@ class TransEncoder(nn.Module):
     """Encoder of Transformer including self-attention and feed forward.
     """
 
-    def __init__(self, config, d_input, n_layers=6, n_head=8, d_k=64, d_v=64,
+    def __init__(self, config, d_input, n_layers=1, n_head=8, d_k=64, d_v=64,
                  d_model=512, d_inner=2048, dropout=0.1, pe_maxlen=5000):
         super(TransEncoder, self).__init__()
         # parameters
@@ -255,7 +255,7 @@ class TransDecoder(nn.Module):
     def __init__(
             self, config, sos_id, eos_id,
             n_tgt_vocab, d_word_vec=512,
-            n_layers=6, n_head=8, d_k=64, d_v=64,
+            n_layers=1, n_head=8, d_k=64, d_v=64,
             d_model=512, d_inner=2048, dropout=0.1,
             tgt_emb_prj_weight_sharing=True,
             pe_maxlen=5000):
@@ -284,7 +284,7 @@ class TransDecoder(nn.Module):
             for _ in range(n_layers)])
 
         self.tgt_word_prj = nn.Linear(d_model, n_tgt_vocab, bias=False)
-        nn.init.xavier_normal_(self.tgt_word_prj.weight)
+        # nn.init.xavier_normal_(self.tgt_word_prj.weight)
 
         if tgt_emb_prj_weight_sharing:
             # Share the weight matrix between target word embedding & the final logit dense layer

@@ -29,7 +29,7 @@ parser = argparse.ArgumentParser(description='train_WSJ0.py')
 
 parser.add_argument('-config', default='config_WSJ0.yaml', type=str,
                     help="config file")
-# parser.add_argument('-gpus', default=range(4), nargs='+', type=int,
+# parser.add_argument('-gpus', default=range(3), nargs='+', type=int,
 parser.add_argument('-gpus', default=[3], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
 # parser.add_argument('-restore', default='data/data/log/2019-12-17-11:31:24/TDAAv3_21001.pt', type=str,
@@ -196,11 +196,13 @@ def train(epoch):
     SDR_SUM = np.array([])
     SDRi_SUM = np.array([])
 
-    if config.schedule and scheduler.get_lr()[0]>5e-5:
+    if updates<=config.warmup: #如果不在warm阶段就正常规划
+       pass
+    elif config.schedule and scheduler.get_lr()[0]>5e-5:
         scheduler.step()
         print(("Decaying learning rate to %g" % scheduler.get_lr()[0]))
         lera.log({
-            'lr': scheduler.get_lr()[0],
+            'lr': [group['lr'] for group in optim.optimizer.param_groups][0],
         })
 
     if opt.model == 'gated':
@@ -209,7 +211,19 @@ def train(epoch):
 
     train_data_gen = prepare_data('once', 'train')
     while True:
-        # print '\n'
+        if updates <= config.warmup:  # 如果在warm就开始warmup
+            tmp_lr =  config.learning_rate * min(max(updates,1)** (-0.5),
+                                             max(updates,1) * (config.warmup ** (-1.5)))
+            for param_group in optim.optimizer.param_groups:
+                param_group['lr'] = tmp_lr
+            scheduler.base_lrs=list([group['lr'] for group in optim.optimizer.param_groups])
+            if updates%100==0: #记录一下
+                print(updates)
+                print("Warmup learning rate to %g" % tmp_lr)
+                lera.log({
+                    'lr': [group['lr'] for group in optim.optimizer.param_groups][0],
+                })
+
         train_data = next(train_data_gen)
         if train_data == False:
             print(('SDR_aver_epoch:', SDR_SUM.mean()))
@@ -279,8 +293,8 @@ def train(epoch):
         writer.add_scalars('scalar/loss',{'ss_loss':ss_loss.cpu().item()},updates)
 
 
-        # loss = sgm_loss + 5 * ss_loss
-        loss = sgm_loss
+        loss = sgm_loss + 5 * ss_loss
+        # loss = sgm_loss
         if config.use_center_loss:
             loss = cen_loss*cen_alpha+ loss
 
@@ -354,7 +368,7 @@ def train(epoch):
             report_total = 0
             report_correct = 0
 
-        if 0 and updates % config.save_interval == 1:
+        if 1 and updates % config.save_interval == 1:
             save_model(log_path + 'TDAAv3_{}.pt'.format(updates))
 
 

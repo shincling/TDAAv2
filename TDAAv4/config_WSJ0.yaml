@@ -2,13 +2,19 @@
 data:  './data/data/save_data'
 log:  './data/data/log/'
 epoch:  300 #epoch总数
-batch_size: 10
+batch_size: 30
 param_init:  0.1
 optim:  'adam'
 loss: 'focal_loss'
 use_center_loss: 0
 #loss: 'cross_entropy'
-learning_rate:  0.001
+
+warmup: -1 # 设为-1就是原来的方式
+learning_rate:  0.001  #如果不用warmup
+
+#warmup: 1600 #前warmup步开始热生，最后就是warmup**(-0.5)的这么大
+#learning_rate:  0.04 # 热生之后是learning_rate*warmup**(-0.5) 这么大
+
 max_grad_norm:  5
 learning_rate_decay:  0.5
 
