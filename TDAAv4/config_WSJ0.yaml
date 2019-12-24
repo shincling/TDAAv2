@@ -2,7 +2,7 @@
 data:  './data/data/save_data'
 log:  './data/data/log/'
 epoch:  300 #epoch总数
-batch_size: 30
+batch_size: 1
 param_init:  0.1
 optim:  'adam'
 loss: 'focal_loss'
@@ -38,9 +38,11 @@ MLMSE: 0
 beam_size:  5
 tmp_score: 0
 #tmp_score: 50000
-top1: 1 #控制是否用top-1的方法来生产第二个通道
+top1: 0 #控制是否用top-1的方法来生产第二个通道
 ct_recu: 0 #控制是否采用att递减的ct构成
 
+# query选项部分
+use_emb: 1 #用transformer的类似spk emb的那个座位query
 
 use_tas: 0
 all_soft: 0 # 这个是决定global emb是不是全用soft的

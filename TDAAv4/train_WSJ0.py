@@ -32,8 +32,9 @@ parser.add_argument('-config', default='config_WSJ0.yaml', type=str,
 # parser.add_argument('-gpus', default=range(3), nargs='+', type=int,
 parser.add_argument('-gpus', default=[3], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
-# parser.add_argument('-restore', default='data/data/log/2019-12-17-11:31:24/TDAAv3_21001.pt', type=str,
-parser.add_argument('-restore', default=None, type=str,
+# parser.add_argument('-restore', default='data/data/log/2019-12-19-11:28:23/TDAAv3_18001.pt', type=str,
+parser.add_argument('-restore', default='data/data/log/2019-12-20-23:12:39/TDAAv3_48001.pt', type=str,
+#parser.add_argument('-restore', default=None, type=str,
                     help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
                     help="Random seed")
@@ -41,7 +42,7 @@ parser.add_argument('-model', default='seq2seq', type=str,
                     help="Model selection")
 parser.add_argument('-score', default='', type=str,
                     help="score_fn")
-parser.add_argument('-notrain', default=0, type=bool,
+parser.add_argument('-notrain', default=1, type=bool,
                     help="train or not")
 parser.add_argument('-log', default='', type=str,
                     help="log directory")
@@ -123,6 +124,11 @@ if config.use_center_loss:
 else:
     optim.set_parameters(list(model.parameters()))
 
+if 1: # 如果只更新后面的部分
+    for k,v in model.encoder.named_parameters():
+        v.requires_grad=False
+    for k,v in model.decoder.named_parameters():
+        v.requires_grad=False
 if config.schedule:
     # scheduler = L.CosineAnnealingLR(optim.optimizer, T_max=config.epoch)
     scheduler = L.StepLR(optim.optimizer, step_size=15, gamma=0.2)
@@ -378,14 +384,16 @@ def eval(epoch):
     # print '\n\n测试的时候请设置config里的batch_size为1！！！please set the batch_size as 1'
     reference, candidate, source, alignments = [], [], [], []
     e = epoch
-    # test_or_valid = 'test'
+    test_or_valid = 'test'
     test_or_valid = 'valid'
+    # test_or_valid = 'train'
     print(('Test or valid:', test_or_valid))
     eval_data_gen = prepare_data('once', test_or_valid, config.MIN_MIX, config.MAX_MIX)
     SDR_SUM = np.array([])
     SDRi_SUM = np.array([])
     batch_idx = 0
     global best_SDR, Var
+    # for iii in range(2000):
     while True:
         print(('-' * 30))
         eval_data = next(eval_data_gen)
@@ -424,15 +432,17 @@ def eval(epoch):
             if config.WFM:
                 WFM_mask = WFM_mask.cuda()
 
-        try:
-            if 1 and len(opt.gpus) > 1:
-                samples, alignment, hiddens, predicted_masks = model.module.beam_sample(src, src_len, dict_spk2idx, tgt,
-                                                                                        beam_size=config.beam_size)
-            else:
-                samples, alignment, hiddens, predicted_masks = model.beam_sample(src, src_len, dict_spk2idx, tgt,
-                                                                                 beam_size=config.beam_size)
-        except:
-            continue
+        # try:
+        if 1 and len(opt.gpus) > 1:
+            samples, alignment, hiddens, predicted_masks = model.module.beam_sample(src, src_len, dict_spk2idx, tgt,
+                                                                                    beam_size=config.beam_size)
+        else:
+            samples,  predicted_masks = model.beam_sample(src, src_len, dict_spk2idx, tgt,
+                                                                             beam_size=config.beam_size)
+            samples = [samples]
+
+        # except:
+        #     continue
 
         # '''
         # expand the raw mixed-features to topk_max channel.
@@ -456,17 +466,17 @@ def eval(epoch):
             lera.log({
                 'ss_loss_' + test_or_valid: ss_loss.cpu().item(),
             })
-            del ss_loss, hiddens
+            del ss_loss
 
         # '''''
-        if batch_idx <= (200 / config.batch_size):  # only the former batches counts the SDR
+        if 1 and batch_idx <= (200 / config.batch_size):  # only the former batches counts the SDR
             predicted_maps = predicted_masks * x_input_map_multi
             # predicted_maps=Variable(feas_tgt)
             utils.bss_eval2(config, predicted_maps, eval_data['multi_spk_fea_list'], raw_tgt, eval_data,
-                            dst='batch_output1')
+                            dst='batch_output_test')
             del predicted_maps, predicted_masks, x_input_map_multi
             try:
-                sdr_aver_batch, sdri_aver_batch=  bss_test.cal('batch_output1/')
+                sdr_aver_batch, sdri_aver_batch=  bss_test.cal('batch_output_test/')
                 SDR_SUM = np.append(SDR_SUM, sdr_aver_batch)
                 SDRi_SUM = np.append(SDRi_SUM, sdri_aver_batch)
             except(AssertionError):
@@ -488,8 +498,12 @@ def eval(epoch):
         reference += raw_tgt
         print(('samples:', samples))
         print(('can:{}, \nref:{}'.format(candidate[-1 * config.batch_size:], reference[-1 * config.batch_size:])))
-        alignments += [align for align in alignment]
+        # alignments += [align for align in alignment]
         batch_idx += 1
+
+        result = utils.eval_metrics(reference, candidate, dict_spk2idx, log_path)
+        print(('hamming_loss: %.8f | micro_f1: %.4f |recall: %.4f | precision: %.4f'
+                   % (result['hamming_loss'], result['micro_f1'], result['micro_recall'], result['micro_precision'], )))
 
     score = {}
     result = utils.eval_metrics(reference, candidate, dict_spk2idx, log_path)
@@ -499,6 +513,7 @@ def eval(epoch):
           % (result['hamming_loss'], result['micro_f1'])))
     score['hamming_loss'] = result['hamming_loss']
     score['micro_f1'] = result['micro_f1']
+    1/0
     return score
 
 

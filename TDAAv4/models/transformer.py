@@ -338,12 +338,12 @@ class TransDecoder(nn.Module):
                                               output_length)
 
         # Forward
-        dec_output = self.dropout(self.tgt_word_emb(ys_in_pad) * self.x_logit_scale +
+        dec_output_input = self.dropout(self.tgt_word_emb(ys_in_pad) * self.x_logit_scale +
                                   self.positional_encoding(ys_in_pad))
 
         for dec_layer in self.layer_stack:
             dec_output, dec_slf_attn, dec_enc_attn = dec_layer(
-                dec_output, encoder_padded_outputs,
+                dec_output_input, encoder_padded_outputs,
                 non_pad_mask=non_pad_mask,
                 slf_attn_mask=slf_attn_mask,
                 dec_enc_attn_mask=dec_enc_attn_mask)
@@ -361,7 +361,7 @@ class TransDecoder(nn.Module):
 
         if return_attns:
             return pred, gold, dec_slf_attn_list, dec_enc_attn_list
-        return pred, gold, dec_output
+        return pred, gold, dec_output, dec_output_input
 
     def compute_score(self, hiddens,targets):
         scores = self.tgt_word_prj(hiddens)
@@ -393,32 +393,28 @@ class TransDecoder(nn.Module):
         attns = torch.stack(attns)
         return sample_ids, (outputs, attns)
 
-    def sample_one(self, input, soft_score, state, tmp_hiddens, contexts, mask):
-        if self.config.global_emb:
-            batch_size = contexts.size(0)
-            a, b = self.embedding.weight.size()
-            if soft_score is None:
-                emb = self.embedding(input)
-            else:
-                emb1 = torch.bmm(soft_score.unsqueeze(1), self.embedding.weight.expand((batch_size, a, b)))
-                if not self.config.all_soft:
-                    emb2 = self.embedding(input)
-                    gamma = F.sigmoid(self.gated1(emb1.squeeze()) + self.gated2(emb2.squeeze()))
-                    emb = gamma * emb1.squeeze() + (1 - gamma) * emb2.squeeze()
-                else:
-                    emb = emb1.squeeze()
-        else:
-            emb = self.embedding(input)
-        output, state = self.rnn(emb, state)
-        hidden, attn_weigths = self.attention(output, contexts)
-        if self.config.schmidt:
-            hidden = models.schmidt(hidden, tmp_hiddens)
-        output = self.compute_score(hidden,targets=None)
+    def sample_one(self, input, soft_score, tmp_hiddens, contexts, mask):
+        input = input.unsqueeze(0)
+        non_pad_mask = torch.ones_like(input).float().unsqueeze(-1)  # 1xix1
+        slf_attn_mask = get_subsequent_mask(input)
+        dec_output = self.dropout(
+            self.tgt_word_emb(input) * self.x_logit_scale +
+            self.positional_encoding(input))
+
+        for dec_layer in self.layer_stack:
+            dec_output, _, _ = dec_layer(
+                dec_output, contexts,
+                non_pad_mask=non_pad_mask,
+                slf_attn_mask=slf_attn_mask,
+                dec_enc_attn_mask=None)
+
+        output = self.compute_score(dec_output,targets=None)
         # print(output)
-        if self.config.mask:
+        if 1:
             if mask is not None:
                 output = output.scatter_(1, mask, -9999999999)
-        return output, state, attn_weigths, hidden, emb
+        # return output, state, attn_weigths, hidden, emb
+        return output, dec_output, dec_output, dec_output, dec_output
 
     def recognize_beam(self, encoder_outputs, char_list, args):
         """Beam search, decode one utterence now.
@@ -430,14 +426,15 @@ class TransDecoder(nn.Module):
             nbest_hyps:
         """
         # search params
-        beam = args.beam_size
-        nbest = args.nbest
-        if args.decode_max_len == 0:
-            maxlen = encoder_outputs.size(0)
-        else:
-            maxlen = args.decode_max_len
+        beam = 5
+        nbest = 1
+        # if args.decode_max_len == 0:
+        #     maxlen = encoder_outputs.size(0)
+        # else:
+        #     maxlen = args.decode_max_len
+        maxlen = 5
 
-        encoder_outputs = encoder_outputs.unsqueeze(0)
+        # encoder_outputs = encoder_outputs.unsqueeze(0)
 
         # prepare sos
         ys = torch.ones(1, 1).fill_(self.sos_id).type_as(encoder_outputs).long()
@@ -457,13 +454,13 @@ class TransDecoder(nn.Module):
                 slf_attn_mask = get_subsequent_mask(ys)
 
                 # -- Forward
-                dec_output = self.dropout(
+                dec_output_input = self.dropout(
                     self.tgt_word_emb(ys) * self.x_logit_scale +
                     self.positional_encoding(ys))
 
                 for dec_layer in self.layer_stack:
                     dec_output, _, _ = dec_layer(
-                        dec_output, encoder_outputs,
+                        dec_output_input, encoder_outputs,
                         non_pad_mask=non_pad_mask,
                         slf_attn_mask=slf_attn_mask,
                         dec_enc_attn_mask=None)
@@ -481,6 +478,8 @@ class TransDecoder(nn.Module):
                     new_hyp['yseq'] = torch.ones(1, (1+ys.size(1))).type_as(encoder_outputs).long()
                     new_hyp['yseq'][:, :ys.size(1)] = hyp['yseq']
                     new_hyp['yseq'][:, ys.size(1)] = int(local_best_ids[0, j])
+                    new_hyp['dec_hiddens']=dec_output
+                    new_hyp['dec_embs_input']=dec_output_input
                     # will be (2 x beam) hyps at most
                     hyps_best_kept.append(new_hyp)
 

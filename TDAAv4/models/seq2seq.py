@@ -81,12 +81,16 @@ class seq2seq(nn.Module):
         tgt = tgt.transpose(0, 1) # convert to bs, output_len
         if mix_wav is not None:
             mix_wav=mix_wav.transpose(0,1)
-        contexts, *_ = self.encoder(src, lengths.data.tolist())  # context是：（max_len,batch_size,hidden_size×2方向）这么大
-        pred, gold, outputs = self.decoder(tgt[:,1:-1], contexts, lengths.data.tolist())
-        #outputs: bs,len+1(2+1),emb
+        contexts, *_ = self.encoder(src, lengths.data.tolist())  # context是：（batch_size,max_len,hidden_size×2方向）这么大
+        pred, gold, outputs,embs = self.decoder(tgt[:,1:-1], contexts, lengths.data.tolist())
+        if self.config.use_emb:
+            query=embs[:,1:]
+        else:
+            query=outputs[:,:-1]
+        #outputs: bs,len+1(2+1),emb , embs是类似spk_emb的输入
         tgt = tgt.transpose(0, 1) # convert to output_len(2+2), bs
         # predicted_maps = self.ss_model(src, outputs[:-1], tgt[1:-1], dict_spk2idx)
-        predicted_maps = self.ss_model(src, outputs[:,:-1], tgt[1:-1], dict_spk2idx)
+        predicted_maps = self.ss_model(src, query, tgt[1:-1], dict_spk2idx)
         return outputs.transpose(0,1), tgt[1:], predicted_maps.transpose(0, 1), None
 
         if not self.config.global_emb:
@@ -159,7 +163,16 @@ class seq2seq(nn.Module):
         lengths, indices = torch.sort(src_len, dim=0, descending=True)
         # _, ind = torch.sort(indices)
         # src = Variable(torch.index_select(src, dim=1, index=indices), volatile=True)
-        contexts, encState = self.encoder(src, lengths.data.cpu().numpy()[0])
+        contexts, *_ = self.encoder(src, lengths.data.cpu().numpy()[0])
+        best_hyps_dict=self.decoder.recognize_beam(contexts, list(dict_spk2idx.keys()),None)[0]
+
+        if self.config.use_emb:
+            ss_embs = best_hyps_dict['dec_embs_input'][:,1:]  # to [ bs, decLen(3),dim]
+        else:
+            ss_embs = best_hyps_dict['dec_hiddens'][:,:-1]  # to [ bs, decLen(3),dim]
+
+        predicted_maps = self.ss_model(src, ss_embs, tgt[1:-1], dict_spk2idx)
+        return best_hyps_dict['yseq'][1:], predicted_maps
 
         #  (1b) Initialize for the decoder.
         def var(a):
@@ -176,7 +189,7 @@ class seq2seq(nn.Module):
 
         # Repeat everything beam_size times.
         contexts = rvar(contexts.data).transpose(0, 1)
-        decState = (rvar(encState[0].data), rvar(encState[1].data))
+        # decState = (rvar(encState[0].data), rvar(encState[1].data))
         # decState.repeat_beam_size_times(beam_size)
         beam = [models.Beam(beam_size, dict_spk2idx, n_best=1,
                             cuda=self.use_cuda)
@@ -208,8 +221,8 @@ class seq2seq(nn.Module):
                     tmp_hiddens.append(var(torch.stack(one_len)))
 
             # Run one step.
-            output, decState, attn, hidden, emb = self.decoder.sample_one(inp, soft_score, decState, tmp_hiddens,
-                                                                          contexts, mask)
+            output, decState, attn, hidden, emb = self.decoder.sample_one(inp, soft_score, tmp_hiddens,
+                                                                          contexts.transpose(0,1), mask)
             # print "sample after decState:",decState[0].data.cpu().numpy().mean()
             if self.config.schmidt:
                 tmp_hiddens += [hidden]
@@ -245,7 +258,7 @@ class seq2seq(nn.Module):
             # update state
             for j, b in enumerate(beam):
                 b.advance(output.data[:, j], attn.data[:, j], hidden.data[:, j], emb.data[:, j])
-                b.beam_update(decState, j)  # 这个函数更新了原来的decState,只不过不是用return，是直接赋值！
+                # b.beam_update(decState, j)  # 这个函数更新了原来的decState,只不过不是用return，是直接赋值！
                 # print('pre root',b.prevKs)
                 # print('next root',b.nextYs)
                 # print('score',b.scores)
@@ -265,9 +278,9 @@ class seq2seq(nn.Module):
             pred = []
             for i, (times, k) in enumerate(ks[:n_best]):
                 hyp, att, hidden, emb = b.getHyp(times, k)
-                if self.config.relitu:
-                    relitu_line(626, 1, att[0].cpu().numpy())
-                    relitu_line(626, 1, att[1].cpu().numpy())
+                # if self.config.relitu:
+                #     relitu_line(626, 1, att[0].cpu().numpy())
+                #     relitu_line(626, 1, att[1].cpu().numpy())
                 hyps.append(hyp)
                 attn.append(att.max(1)[1])
                 hiddens.append(hidden)
@@ -277,7 +290,7 @@ class seq2seq(nn.Module):
             allAttn.append(attn[0])
             allHiddens.append(hiddens[0])
             allEmbs.append(embs[0])
-        print(allHyps)
+        print('allHyps:\n',allHyps)
 
         # from sklearn.metrics.pairwise import euclidean_distances,cosine_distances
         # print(cosine_distances(allEmbs[0].data.cpu().numpy()))
