@@ -134,7 +134,7 @@ def ss_loss(config, x_input_map_multi, multi_mask, y_multi_map, loss_multi_func,
     # predict_multi_map=Variable(y_multi_map)
     y_multi_map = Variable(y_multi_map)
 
-    loss_multi_speech = loss_multi_func(predict_multi_map, y_multi_map)
+    loss_multi_speech = loss_multi_func(predict_multi_map.squeeze(), y_multi_map)
 
     # 各通道和为１的loss部分,应该可以更多的带来差异
     # y_sum_map=Variable(torch.ones(config.batch_size,config.mix_speech_len,config.speech_fre)).cuda()

@@ -70,8 +70,11 @@ class seq2seq(nn.Module):
         Var = torch.mean(Var, 0)  # 在batch的维度上平均
         return Var.detach()
 
-    def forward(self, src, src_len, tgt, tgt_len, dict_spk2idx,mix_wav=None):
+    def forward(self, src, src_len, tgt, tgt_len, dict_spk2idx,src_original=None,mix_wav=None,):
         # 感觉这是个把一个batch里的数据按从长到短调整顺序的意思
+        if src_original is None:
+            src_original=src
+            src_original=src_original.transpose(0,1)
         lengths, indices = torch.sort(src_len.squeeze(0), dim=0, descending=True)
         # todo: 这里只要一用排序，tgt那个就出问题，现在的长度都一样，所以没有排序也可以工作，这个得好好研究一下后面
         # src = torch.index_select(src, dim=0, index=indices)
@@ -90,7 +93,7 @@ class seq2seq(nn.Module):
         #outputs: bs,len+1(2+1),emb , embs是类似spk_emb的输入
         tgt = tgt.transpose(0, 1) # convert to output_len(2+2), bs
         # predicted_maps = self.ss_model(src, outputs[:-1], tgt[1:-1], dict_spk2idx)
-        predicted_maps = self.ss_model(src, query, tgt[1:-1], dict_spk2idx)
+        predicted_maps = self.ss_model(src_original, query, tgt[1:-1], dict_spk2idx)
         return outputs.transpose(0,1), tgt[1:], predicted_maps.transpose(0, 1), None
 
         if not self.config.global_emb:

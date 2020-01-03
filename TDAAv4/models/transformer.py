@@ -513,8 +513,7 @@ class TransDecoder(nn.Module):
                 break
 
             for hyp in hyps:
-                print('hypo: ' + ''.join([char_list[int(x)]
-                                          for x in hyp['yseq'][0, 1:]]))
+                print('hypo: ' + ''.join([char_list[int(x)] for x in hyp['yseq'][0, 1:]]), hyp['score'])
         # end for i in range(maxlen)
         nbest_hyps = sorted(ended_hyps, key=lambda x: x['score'], reverse=True)[
             :min(len(ended_hyps), nbest)]
