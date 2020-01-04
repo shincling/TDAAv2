@@ -192,7 +192,8 @@ def bss_eval2(config, predict_multi_map, y_multi_map, y_map_gtruth, train_data, 
         _mix_spec = train_data['mix_phase'][sample_idx]
         feas_tgt = train_data['multi_spk_fea_list'][sample_idx]
         phase_mix = np.angle(_mix_spec)
-        each_pre = each_pre[0]
+        if len(predict_multi_map_list)==1:
+            each_pre = each_pre[0]
         for idx, one_cha in enumerate(each_trueVector):
             this_spk = one_cha
             y_pre_map = each_pre[idx].data.cpu().numpy()

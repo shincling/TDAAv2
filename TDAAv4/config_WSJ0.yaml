@@ -2,7 +2,7 @@
 data:  './data/data/save_data'
 log:  './data/data/log/'
 epoch:  300 #epoch总数
-batch_size: 1
+batch_size: 3
 param_init:  0.1
 optim:  'adam'
 loss: 'focal_loss'
@@ -10,7 +10,7 @@ use_center_loss: 0
 #loss: 'cross_entropy'
 
 warmup: -1 # 设为-1就是原来的方式
-learning_rate:  0.001  #如果不用warmup
+learning_rate:  0.0002 #如果不用warmup
 
 #warmup: 1600 #前warmup步开始热生，最后就是warmup**(-0.5)的这么大
 #learning_rate:  0.04 # 热生之后是learning_rate*warmup**(-0.5) 这么大
@@ -28,8 +28,8 @@ decoder_hidden_size:  512
 num_layers:  4
 dropout:  0.5
 max_tgt_len:  5
-eval_interval:  3000
-save_interval:  3000
+eval_interval:  2000
+save_interval:  2000
 max_generator_batches:  32
 metric:  ['hamming_loss', 'micro_f1']
 shared_vocab:  0
@@ -42,16 +42,16 @@ top1: 0 #控制是否用top-1的方法来生产第二个通道
 ct_recu: 0 #控制是否采用att递减的ct构成
 
 # query选项部分
-use_emb: 1 #用transformer的类似spk emb的那个座位query
+use_emb: 0 #用transformer的类似spk emb的那个座位query
 
 use_tas: 0
 all_soft: 0 # 这个是决定global emb是不是全用soft的
 
 global_emb:  1
-global_hidden: 0
-SPK_EMB_SIZE: 256 #注意这个东西需要和上面的spk_emb（如果是global_emb的话）,否认则就跟decoder的hidden_size对应
-#global_hidden: 1
-#SPK_EMB_SIZE : 512 #注意这个东西需要和上面的spk_emb（如果是global_emb的话）,否认则就跟decoder的hidden_size对应
+#global_hidden: 0
+#SPK_EMB_SIZE: 256 #注意这个东西需要和上面的spk_emb（如果是global_emb的话）,否认则就跟decoder的hidden_size对应
+global_hidden: 1
+SPK_EMB_SIZE : 512 #注意这个东西需要和上面的spk_emb（如果是global_emb的话）,否认则就跟decoder的hidden_size对应
 
 #global_emb:  0
 #SPK_EMB_SIZE : 512 #注意这个东西需要和上面的spk_emb（如果是global_emb的话）,否认则就跟decoder的hidden_size对应
@@ -117,7 +117,7 @@ FRAME_LENGTH: 256
 # 帧移(ms)
 FRAME_SHIFT:  64
 # 是否shuffle_batch,由于现在都是随机采样，这个参数没有意义了
-SHUFFLE_BATCH:  0
+SHUFFLE_BATCH:  1
 voice_dB: 2.5 # 配置从-db～db的随机音量大小变换
 noise_dB: -10 # 从noise——db 到 0 的噪音变换
 normalize: 1 #是否波形归一化

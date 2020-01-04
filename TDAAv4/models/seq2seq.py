@@ -72,9 +72,10 @@ class seq2seq(nn.Module):
 
     def forward(self, src, src_len, tgt, tgt_len, dict_spk2idx,src_original=None,mix_wav=None,):
         # 感觉这是个把一个batch里的数据按从长到短调整顺序的意思
+        # print(src.shape,src_original.shape)
         if src_original is None:
             src_original=src
-            src_original=src_original.transpose(0,1)
+        src_original=src_original.transpose(0,1) # 确保要bs在第二维
         lengths, indices = torch.sort(src_len.squeeze(0), dim=0, descending=True)
         # todo: 这里只要一用排序，tgt那个就出问题，现在的长度都一样，所以没有排序也可以工作，这个得好好研究一下后面
         # src = torch.index_select(src, dim=0, index=indices)
