@@ -151,7 +151,11 @@ class seq2seq(nn.Module):
 
         return sample_ids.t(), alignments.t()
 
-    def beam_sample(self, src, src_len, dict_spk2idx, tgt, beam_size=1,mix_wav=None):
+    def beam_sample(self, src, src_len, dict_spk2idx, tgt, beam_size=1, src_original=None, mix_wav=None):
+
+        if src_original is None:
+            src_original=src
+        src_original=src_original.transpose(0,1) # 确保要bs在第二维
 
         src = src.transpose(0, 1)
         # beam_size = self.config.beam_size
@@ -175,7 +179,7 @@ class seq2seq(nn.Module):
         else:
             ss_embs = best_hyps_dict['dec_hiddens'][:,:-1]  # to [ bs, decLen(3),dim]
 
-        predicted_maps = self.ss_model(src, ss_embs, tgt[1:-1], dict_spk2idx)
+        predicted_maps = self.ss_model(src_original, ss_embs, tgt[1:-1], dict_spk2idx)
         return best_hyps_dict['yseq'][1:], predicted_maps
 
         #  (1b) Initialize for the decoder.

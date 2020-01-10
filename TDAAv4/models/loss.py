@@ -130,11 +130,18 @@ def cross_entropy_loss(hidden_outputs, decoder, targets, criterion, config, sim_
 
 
 def ss_loss(config, x_input_map_multi, multi_mask, y_multi_map, loss_multi_func,wav_loss):
+    assert multi_mask.shape[-2:]==x_input_map_multi.shape[-2:]==y_multi_map.shape[-2:]
+    siz=multi_mask.shape
+    x_input_map_multi=x_input_map_multi.view(-1,siz[-2],siz[-1])
+    multi_mask=multi_mask.view(-1,siz[-2],siz[-1])
+    y_multi_map=y_multi_map.view(-1,siz[-2],siz[-1])
+
     predict_multi_map = multi_mask * x_input_map_multi
     # predict_multi_map=Variable(y_multi_map)
     y_multi_map = Variable(y_multi_map)
 
-    loss_multi_speech = loss_multi_func(predict_multi_map.squeeze(), y_multi_map)
+    # loss_multi_speech = loss_multi_func(predict_multi_map.squeeze(), y_multi_map)
+    loss_multi_speech = loss_multi_func(predict_multi_map, y_multi_map)
 
     # 各通道和为１的loss部分,应该可以更多的带来差异
     # y_sum_map=Variable(torch.ones(config.batch_size,config.mix_speech_len,config.speech_fre)).cuda()
