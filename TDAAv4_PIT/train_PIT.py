@@ -30,9 +30,10 @@ parser = argparse.ArgumentParser(description='train_WSJ0.py')
 parser.add_argument('-config', default='config_WSJ0.yaml', type=str,
                     help="config file")
 # parser.add_argument('-gpus', default=range(3), nargs='+', type=int,
-parser.add_argument('-gpus', default=[3], nargs='+', type=int,
+parser.add_argument('-gpus', default=[2,3], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
-parser.add_argument('-restore', default='data/data/log/2020-01-02-08:50:49/TDAAv3_144001.pt', type=str,
+# parser.add_argument('-restore', default='../TDAAv4/data/data/log/2020-01-02-08:50:49/TDAAv3_144001.pt', type=str,
+parser.add_argument('-restore', default='TDAAv3_PIT_30001.pt', type=str,
 # parser.add_argument('-restore', default=None, type=str,
                     help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
@@ -41,7 +42,7 @@ parser.add_argument('-model', default='seq2seq', type=str,
                     help="Model selection")
 parser.add_argument('-score', default='', type=str,
                     help="score_fn")
-parser.add_argument('-notrain', default=0, type=bool,
+parser.add_argument('-notrain', default=1, type=bool,
                     help="train or not")
 parser.add_argument('-log', default='', type=str,
                     help="log directory")
@@ -248,6 +249,7 @@ def train(epoch):
         tgt = Variable(torch.from_numpy(np.array(
             [[0] + [dict_spk2idx[spk] for spk in spks] + (tgt_max_len - len(spks) - 1) * [dict_spk2idx['<EOS>']] for
              spks in raw_tgt], dtype=np.int))).transpose(0, 1)  # 转换成数字，然后前后加开始和结束符号。
+        # tgt = Variable(torch.from_numpy(np.array([[0,1,2,102] for __ in range(config.batch_size)], dtype=np.int))).transpose(0, 1)  # 转换成数字，然后前后加开始和结束符号。
         src_len = Variable(torch.LongTensor(config.batch_size).zero_() + mix_speech_len).unsqueeze(0)
         tgt_len = Variable(
             torch.LongTensor([len(one_spk) for one_spk in train_data['multi_spk_fea_list']])).unsqueeze(0)
@@ -267,6 +269,47 @@ def train(epoch):
             WFM_mask = WFM_mask.cuda()
             del x_input_map_multi
 
+        elif config.PSM:
+            siz = src.size()  # bs,T,F
+            assert len(siz) == 3
+            # topk_max = config.MAX_MIX  # 最多可能的topk个数
+            topk_max = 2  # 最多可能的topk个数
+            x_input_map_multi = torch.unsqueeze(src, 1).expand(siz[0], topk_max, siz[1], siz[2]).contiguous()  # bs,topk,T,F
+            feas_tgt_tmp = feas_tgt.view(siz[0], -1, siz[1], siz[2])
+
+            IRM=feas_tgt_tmp/(x_input_map_multi+1e-15)
+
+            angle_tgt=models.rank_feas(raw_tgt, train_data['multi_spk_angle_list']).view(siz[0],-1,siz[1],siz[2])
+            angle_mix=Variable(torch.from_numpy(np.array(train_data['mix_angle']))).unsqueeze(1).expand(siz[0], topk_max, siz[1], siz[2]).contiguous()
+            ang=np.cos(angle_mix-angle_tgt)
+            ang=np.clip(ang,0,None)
+
+            feas_tgt = x_input_map_multi *IRM*ang # bs,topk,T,F
+            feas_tgt = feas_tgt.view(-1, siz[1], siz[2])  # bs*topk,T,F
+            del x_input_map_multi
+
+        elif config.frame_mask:
+            siz = src.size()  # bs,T,F
+            assert len(siz) == 3
+            # topk_max = config.MAX_MIX  # 最多可能的topk个数
+            topk_max = 2  # 最多可能的topk个数
+            x_input_map_multi = torch.unsqueeze(src, 1).expand(siz[0], topk_max, siz[1], siz[2]).contiguous()  # bs,topk,T,F
+            feas_tgt_tmp = feas_tgt.view(siz[0], -1, siz[1], siz[2])
+
+            feas_tgt_time=torch.sum(feas_tgt_tmp,3).transpose(1,2) #bs,T,topk
+            for v1 in feas_tgt_time:
+                for v2 in v1:
+                    if v2[0]>v2[1]:
+                        v2[0]=1
+                        v2[1]=0
+                    else:
+                        v2[0]=0
+                        v2[1]=1
+            frame_mask=feas_tgt_time.transpose(1,2).unsqueeze(-1) #bs,topk,t,1
+            feas_tgt=x_input_map_multi*frame_mask
+            feas_tgt = feas_tgt.view(-1, siz[1], siz[2])  # bs*topk,T,F
+
+
         if use_cuda:
             src = src.cuda().transpose(0, 1)
             tgt = tgt.cuda()
@@ -282,10 +325,40 @@ def train(epoch):
         aim_list = (tgt[1:-1].transpose(0, 1).contiguous().view(-1) != dict_spk2idx['<EOS>']).nonzero().squeeze()
         aim_list = aim_list.data.cpu().numpy()
 
-        outputs, targets, multi_mask, gamma = model(src, src_len, tgt, tgt_len,
+        outputs, targets, multi_mask, dec_enc_attn_list = model(src, src_len, tgt, tgt_len,
                                              dict_spk2idx)  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
         print('mask size:', multi_mask.size())
         # writer.add_histogram('global gamma',gamma, updates)
+
+
+        src = src.transpose(0, 1)
+        # expand the raw mixed-features to topk_max channel.
+        siz = src.size()
+        assert len(siz) == 3
+        topk_max = config.MAX_MIX  # 最多可能的topk个数
+        x_input_map_multi = torch.unsqueeze(src, 1).expand(siz[0], topk_max, siz[1], siz[2]).contiguous()#.view(-1, siz[1], siz[2])
+        # x_input_map_multi = x_input_map_multi[aim_list]
+        multi_mask = multi_mask.transpose(0, 1)
+        # if config.WFM:
+        #     feas_tgt = x_input_map_multi.data * WFM_mask
+
+        if 1 and len(opt.gpus) > 1: #先ss获取Perm
+            ss_loss, best_pmt = model.module.separation_pit_loss(x_input_map_multi, multi_mask, feas_tgt)
+        else:
+            ss_loss, best_pmt = model.separation_pit_loss(x_input_map_multi, multi_mask, feas_tgt)
+        print('loss for SS,this batch:', ss_loss.cpu().item())
+        print('best perms for this batch:', best_pmt)
+        writer.add_scalars('scalar/loss',{'ss_loss':ss_loss.cpu().item()},updates)
+
+        # 按照Best_perm重新排列spk的预测目标
+        targets=targets.transpose(0,1) #bs,aim+1(EOS也在）
+        # print('targets',targets)
+        targets_old=targets
+        for idx,(tar,per) in enumerate(zip(targets,best_pmt)):
+            per.append(topk_max) #每个batch后面加个结尾，保持最后一个EOS不变
+            targets_old[idx]=tar[per]
+        targets=targets_old.transpose(0,1)
+        # print('targets',targets)
 
         if 1 and len(opt.gpus) > 1:
             sgm_loss, num_total, num_correct = model.module.compute_loss(outputs, targets, opt.memory)
@@ -298,25 +371,6 @@ def train(epoch):
             cen_loss = center_loss(outputs.view(-1,config.SPK_EMB_SIZE), targets.view(-1))
             print(('loss for SGM center loss,this batch:',cen_loss.cpu().item()))
             writer.add_scalars('scalar/loss',{'center_loss':cen_loss.cpu().item()},updates)
-
-        src = src.transpose(0, 1)
-        # expand the raw mixed-features to topk_max channel.
-        siz = src.size()
-        assert len(siz) == 3
-        topk_max = config.MAX_MIX  # 最多可能的topk个数
-        x_input_map_multi = torch.unsqueeze(src, 1).expand(siz[0], topk_max, siz[1], siz[2]).contiguous().view(-1, siz[1], siz[2])
-        x_input_map_multi = x_input_map_multi[aim_list]
-        multi_mask = multi_mask.transpose(0, 1)
-        if config.WFM:
-            feas_tgt = x_input_map_multi.data * WFM_mask
-
-        if 1 and len(opt.gpus) > 1:
-            ss_loss = model.module.separation_loss(x_input_map_multi, multi_mask, feas_tgt)
-        else:
-            ss_loss = model.separation_loss(x_input_map_multi, multi_mask, feas_tgt)
-        print(('loss for SS,this batch:', ss_loss.cpu().item()))
-        writer.add_scalars('scalar/loss',{'ss_loss':ss_loss.cpu().item()},updates)
-
 
         loss = sgm_loss + 5 * ss_loss
         # loss = sgm_loss
@@ -338,7 +392,7 @@ def train(epoch):
         })
 
         if updates>10 and updates % config.eval_interval in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]:
-            predicted_maps = multi_mask * x_input_map_multi
+            predicted_maps = multi_mask * x_input_map_multi.view(siz[0]*topk_max,siz[1],siz[2])
             # predicted_maps=Variable(feas_tgt)
             utils.bss_eval(config, predicted_maps, train_data['multi_spk_fea_list'], raw_tgt, train_data, dst='batch_output1')
             # utils.bss_eval2(config, predicted_maps, train_data['multi_spk_fea_list'], raw_tgt, train_data, dst='batch_output1')
@@ -430,7 +484,7 @@ def eval(epoch):
         top_k = len(raw_tgt[0])
         # 要保证底下这几个都是longTensor(长整数）
         # tgt = Variable(torch.from_numpy(np.array([[0]+[dict_spk2idx[spk] for spk in spks]+[dict_spk2idx['<EOS>']] for spks in raw_tgt],dtype=np.int))).transpose(0,1) #转换成数字，然后前后加开始和结束符号。
-        tgt = Variable(torch.ones(top_k + 2, config.batch_size))  # 这里随便给一个tgt，为了测试阶段tgt的名字无所谓其实。
+        tgt = Variable(torch.from_numpy(np.array([[0,1,2,102] for __ in range(config.batch_size)], dtype=np.int))).transpose(0, 1)  # 转换成数字，然后前后加开始和结束符号。
 
         src_len = Variable(torch.LongTensor(config.batch_size).zero_() + mix_speech_len).unsqueeze(0)
         tgt_len = Variable(torch.LongTensor([len(one_spk) for one_spk in eval_data['multi_spk_fea_list']])).unsqueeze(0)
@@ -452,6 +506,9 @@ def eval(epoch):
                 WFM_mask = WFM_mask.cuda()
 
         # try:
+        outputs, targets, multi_mask, dec_enc_attn_list = model(src, src_len, tgt, tgt_len,
+                                                                dict_spk2idx)  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
+        print('mask size:', multi_mask.size())
         if 1 and len(opt.gpus) > 1:
             samples, alignment, hiddens, predicted_masks = model.module.beam_sample(src, src_len, dict_spk2idx, tgt,
                                                                                     beam_size=config.beam_size)
@@ -694,8 +751,7 @@ def save_model(path):
 def main():
     for i in range(1, config.epoch + 1):
         if not opt.notrain:
-            train_recu(i)
-            # train(i)
+            train(i)
         else:
             eval(i)
             # eval_recu(i)

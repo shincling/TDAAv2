@@ -257,10 +257,11 @@ class TransDecoder(nn.Module):
             n_tgt_vocab, d_word_vec=512,
             n_layers=1, n_head=8, d_k=64, d_v=64,
             d_model=512, d_inner=2048, dropout=0.1,
-            tgt_emb_prj_weight_sharing=True,
+            tgt_emb_prj_weight_sharing=False,
             pe_maxlen=5000):
         super(TransDecoder, self).__init__()
         # parameters
+        self.config = config
         self.sos_id = sos_id  # Start of Sentence
         self.eos_id = eos_id  # End of Sentence
         self.n_tgt_vocab = n_tgt_vocab
@@ -284,7 +285,7 @@ class TransDecoder(nn.Module):
             for _ in range(n_layers)])
 
         self.tgt_word_prj = nn.Linear(d_model, n_tgt_vocab, bias=False)
-        # nn.init.xavier_normal_(self.tgt_word_prj.weight)
+        nn.init.xavier_normal_(self.tgt_word_prj.weight)
 
         if tgt_emb_prj_weight_sharing:
             # Share the weight matrix between target word embedding & the final logit dense layer
@@ -348,7 +349,7 @@ class TransDecoder(nn.Module):
                 slf_attn_mask=slf_attn_mask,
                 dec_enc_attn_mask=dec_enc_attn_mask)
 
-            if return_attns:
+            if 1 or return_attns:
                 dec_slf_attn_list += [dec_slf_attn]
                 dec_enc_attn_list += [dec_enc_attn]
 
@@ -360,7 +361,7 @@ class TransDecoder(nn.Module):
         pred, gold = seq_logit, ys_out_pad
 
         if return_attns:
-            return pred, gold, dec_slf_attn_list, dec_enc_attn_list
+            return pred, gold, dec_output, dec_output_input, dec_slf_attn_list, dec_enc_attn_list[-1].view(self.n_head,-1,3,751)
         return pred, gold, dec_output, dec_output_input
 
     def compute_score(self, hiddens,targets):

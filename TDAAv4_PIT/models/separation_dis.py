@@ -294,6 +294,49 @@ class SS(nn.Module):
         # assert multi_mask.shape[0] == len(aim_list)
         return multi_mask
 
+class SS_att(nn.Module):
+    def __init__(self, config, speech_fre, mix_speech_len, num_labels):
+        super(SS_att, self).__init__()
+        speech_fre_old=speech_fre# n_head
+        self.config = config
+        self.speech_fre_old = speech_fre
+        self.speech_fre = speech_fre+8
+        self.mix_speech_len = mix_speech_len
+        self.num_labels = num_labels
+        print( 'Begin to build the maim model for speech speration part.')
+        self.mix_hidden_layer_3d = MIX_SPEECH(config, self.speech_fre, mix_speech_len) #bs,T,d
+        self.linear1=nn.Linear(600,600)
+        self.linear2=nn.Linear(600,600)
+        self.linear3=nn.Linear(600,600) #bs,T,d
+        self.att=nn.Linear(600,speech_fre_old) #bs,T,F
+
+    def forward(self, mix_feas, hidden_outputs, targets, dict_spk2idx=None):
+        '''
+        :param targets:这个targets的大小是：topk,bs 注意后面要transpose
+        123  324  345
+        323  E     E
+        这种样子的，所以要去找aim_list 应该找到的结果是,先transpose之后，然后flatten，然后取不是E的：[0 1 2 4 ]
+
+        mix_feas:bs,T,F
+        hidden_outputs: n_head,bs,topk,T
+
+        '''
+        hidden_outputs=hidden_outputs.permute(1,2,3,0) #bs,topk,T,n_head
+        config = self.config
+        config.SPK_EMB_SIZE=hidden_outputs.size(-1)
+        self.mix_speech_len=mix_feas.size()[1]
+        top_k_max, batch_size = targets.size()  # 这个top_k_max其实就是最多有几个说话人，应该是跟Max_MIX是保持一样的
+        # assert hidden_outputs.size()[:2]==(batch_size,top_k_max)
+
+        mix_feas=mix_feas.unsqueeze(1).expand(batch_size,top_k_max,self.mix_speech_len,self.speech_fre_old) #bs,topk,T,F
+        mix_feas=torch.cat([mix_feas,hidden_outputs],dim=3).view(batch_size*top_k_max,self.mix_speech_len,self.speech_fre)
+        mix_speech_hidden, mix_tmp_hidden = self.mix_hidden_layer_3d(mix_feas) #mix_tmp_hidden: bs,T,d
+        mix_hidden_liner = self.linear1(mix_tmp_hidden)
+        mix_hidden_liner = self.linear2(mix_hidden_liner)
+        mix_hidden_liner = self.linear3(mix_hidden_liner)
+        multi_mask=F.sigmoid(self.att(mix_hidden_liner)) #bs*topk,T,F
+        # multi_mask=mask.view(batch_size,top_k_max,self.mix_speech_len,self.speech_fre_old)
+        return multi_mask
 
 def top_k_mask(batch_pro, alpha, top_k):
     'batch_pro是 bs*n的概率分布，例如2×3的，每一行是一个概率分布\

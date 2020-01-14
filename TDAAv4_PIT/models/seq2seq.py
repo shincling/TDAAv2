@@ -42,6 +42,7 @@ class seq2seq(nn.Module):
         if config.use_tas:
             self.ss_model = models.ConvTasNet(config)
         else:
+            # self.ss_model = models.SS_att(config, speech_fre, mix_speech_len, num_labels)
             self.ss_model = models.SS(config, speech_fre, mix_speech_len, num_labels)
 
     def compute_loss(self, hidden_outputs, targets, memory_efficiency):
@@ -88,17 +89,27 @@ class seq2seq(nn.Module):
         tgt = tgt.transpose(0, 1) # convert to bs, output_len
         if mix_wav is not None:
             mix_wav=mix_wav.transpose(0,1)
-        contexts, *_ = self.encoder(src, lengths.data.tolist())  # context是：（batch_size,max_len,hidden_size×2方向）这么大
-        pred, gold, outputs,embs = self.decoder(tgt[:,1:-1], contexts, lengths.data.tolist())
-        if self.config.use_emb:
+        contexts, *_ = self.encoder(src, lengths.data.tolist(),return_attns=True)  # context是：（batch_size,max_len,hidden_size×2方向）这么大
+        if self.config.PIT_training:
+            tgt_tmp=tgt.clone()
+            tgt_tmp[:,1]=1
+            tgt_tmp[:,2]=2
+            pred, gold, outputs,embs,dec_slf_attn_list, dec_enc_attn_list= self.decoder(tgt_tmp[:,1:-1], contexts, lengths.data.tolist(),return_attns=True)
+        else:
+            pred, gold, outputs,embs,dec_slf_attn_list, dec_enc_attn_list= self.decoder(tgt[:,1:-1], contexts, lengths.data.tolist())
+        if 0 and self.config.use_emb:
             query=embs[:,1:]
         else:
             query=outputs[:,:-1]
         #outputs: bs,len+1(2+1),emb , embs是类似spk_emb的输入
         tgt = tgt.transpose(0, 1) # convert to output_len(2+2), bs
         # predicted_maps = self.ss_model(src, outputs[:-1], tgt[1:-1], dict_spk2idx)
-        predicted_maps = self.ss_model(src_original, query, tgt[1:-1], dict_spk2idx)
-        return outputs.transpose(0,1), tgt[1:], predicted_maps.transpose(0, 1), None
+        if 1:
+            predicted_maps = self.ss_model(src_original, query, tgt[1:-1], dict_spk2idx)
+        else:
+            # dec_enc_attn_list:nhead,bs,topk(2+1),T
+            predicted_maps = self.ss_model(src_original, dec_enc_attn_list[:,:,:2], tgt[1:-1], dict_spk2idx)
+        return outputs.transpose(0,1), tgt[1:], predicted_maps.transpose(0, 1), dec_enc_attn_list[-1] #n_head*b,topk+1,T
 
         if not self.config.global_emb:
             # outputs, final_state, embs = self.decoder(tgt[:-1], state, contexts.transpose(0, 1))

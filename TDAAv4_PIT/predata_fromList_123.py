@@ -126,12 +126,14 @@ def prepare_data(mode, train_or_test, min=None, max=None):
     mix_speechs = np.zeros((config.batch_size, config.MAX_LEN))
     mix_feas = []  # 应该是bs,n_frames,n_fre这么多
     mix_phase = []  # 应该是bs,n_frames,n_fre这么多
+    mix_angle = []  # 应该是bs,n_frames,n_fre这么多
     aim_fea = []  # 应该是bs,n_frames,n_fre这么多
     aim_spkid = []  # np.zeros(config.batch_size)
     aim_spkname = []  # np.zeros(config.batch_size)
     query = []  # 应该是batch_size，shape(query)的形式，用list再转换把
     multi_spk_fea_list = []  # 应该是bs个dict，每个dict里是说话人name为key，clean_fea为value的字典
     multi_spk_wav_list = []  # 应该是bs个dict，每个dict里是说话人name为key，clean_fea为value的字典
+    multi_spk_angle_list = []  # 应该是bs个dict，每个dict里是说话人name为key，clean_fea为value的字典
 
     # 目标数据集的总data，底下应该存放分目录的文件夹，每个文件夹应该名字是sX
     data_path = aim_path + '/data'
@@ -199,11 +201,13 @@ def prepare_data(mode, train_or_test, min=None, max=None):
                     mix_speechs = np.zeros((config.batch_size, config.MAX_LEN))
                     mix_feas = []  # 应该是bs,n_frames,n_fre这么多
                     mix_phase = []
+                    mix_angle= []
                     aim_fea = []  # 应该是bs,n_frames,n_fre这么多
                     aim_spkid = []  # np.zeros(config.batch_size)
                     aim_spkname = []
                     query = []  # 应该是batch_size，shape(query)的形式，用list再转换把
                     multi_spk_fea_list = []
+                    multi_spk_angle_list = []
                     multi_spk_order_list=[] #用来管理每个混合语音里说话人的能俩给你大小的order
                     multi_spk_wav_list = []
                     continue
@@ -236,6 +240,7 @@ def prepare_data(mode, train_or_test, min=None, max=None):
 
                 multi_fea_dict_this_sample = {}
                 multi_wav_dict_this_sample = {}
+                multi_angle_dict_this_sample = {}
                 multi_name_list_this_sample = []
                 multi_db_dict_this_sample = {}
 
@@ -286,10 +291,13 @@ def prepare_data(mode, train_or_test, min=None, max=None):
                         wav_mix = signal
                         aim_fea_clean = np.transpose(np.abs(librosa.core.spectrum.stft(signal, config.FRAME_LENGTH,
                                                                                        config.FRAME_SHIFT)))
+                        aim_angle_clean = np.transpose(np.angle(librosa.core.spectrum.stft(signal, config.FRAME_LENGTH,
+                                                                                       config.FRAME_SHIFT)))
                         aim_fea.append(aim_fea_clean)
                         # 把第一个人顺便也注册进去混合dict里
                         multi_fea_dict_this_sample[spk] = aim_fea_clean
                         multi_wav_dict_this_sample[spk] = signal
+                        multi_angle_dict_this_sample[spk] = aim_angle_clean
 
                     else:
                         ratio = 10 ** (aim_spk_db_k[k] / 20.0)
@@ -298,26 +306,28 @@ def prepare_data(mode, train_or_test, min=None, max=None):
                         # 　这个说话人的语音
                         some_fea_clean = np.transpose(np.abs(librosa.core.spectrum.stft(signal, config.FRAME_LENGTH,
                                                                                         config.FRAME_SHIFT, )))
+                        some_angle_clean = np.transpose(np.angle(librosa.core.spectrum.stft(signal, config.FRAME_LENGTH,
+                                                                                           config.FRAME_SHIFT)))
                         multi_fea_dict_this_sample[spk] = some_fea_clean
                         multi_wav_dict_this_sample[spk] = signal
+                        multi_angle_dict_this_sample[spk] = some_angle_clean
 
                 multi_spk_fea_list.append(multi_fea_dict_this_sample)  # 把这个sample的dict传进去
                 multi_spk_wav_list.append(multi_wav_dict_this_sample)  # 把这个sample的dict传进去
+                multi_spk_angle_list.append(multi_angle_dict_this_sample)  # 把这个sample的dict传进去
 
                 # 这里采用log 以后可以考虑采用MFCC或GFCC特征做为输入
                 if config.IS_LOG_SPECTRAL:
                     feature_mix = np.log(np.transpose(np.abs(librosa.core.spectrum.stft(wav_mix, config.FRAME_LENGTH,
-                                                                                        config.FRAME_SHIFT,
-                                                                                        window=config.WINDOWS)))
-                                         + np.spacing(1))
+                                                                                        config.FRAME_SHIFT, window=config.WINDOWS))) + np.spacing(1))
                 else:
                     feature_mix = np.transpose(np.abs(librosa.core.spectrum.stft(wav_mix, config.FRAME_LENGTH,
                                                                                  config.FRAME_SHIFT, )))
 
                 mix_speechs[batch_idx, :] = wav_mix
                 mix_feas.append(feature_mix)
-                mix_phase.append(np.transpose(librosa.core.spectrum.stft(wav_mix, config.FRAME_LENGTH,
-                                                                         config.FRAME_SHIFT, )))
+                mix_phase.append(np.transpose(librosa.core.spectrum.stft(wav_mix, config.FRAME_LENGTH, config.FRAME_SHIFT, )))
+                mix_angle.append(np.angle(np.transpose(librosa.core.spectrum.stft(wav_mix, config.FRAME_LENGTH, config.FRAME_SHIFT, ))))
                 batch_idx += 1
                 # print('batch_dix:{}/{},'.format(batch_idx,config.batch_size),)
                 if batch_idx == config.batch_size:  # 填满了一个batch
@@ -354,12 +364,14 @@ def prepare_data(mode, train_or_test, min=None, max=None):
                         yield {'mix_wav': mix_speechs,
                                'mix_feas': mix_feas,
                                'mix_phase': mix_phase,
+                               'mix_angle': mix_angle,
                                'aim_fea': aim_fea,
                                'aim_spkname': aim_spkname,
                                'query': query,
                                'num_all_spk': len(all_spk),
                                'multi_spk_fea_list': multi_spk_fea_list,
                                'multi_spk_wav_list': multi_spk_wav_list,
+                               'multi_spk_angle_list': multi_spk_angle_list,
                                'batch_order': batch_ordre,
                                'batch_total': batch_total,
                                'tas_zip': _collate_fn(mix_speechs,multi_spk_wav_list,batch_ordre)
@@ -371,12 +383,14 @@ def prepare_data(mode, train_or_test, min=None, max=None):
                     mix_speechs = np.zeros((config.batch_size, config.MAX_LEN))
                     mix_feas = []  # 应该是bs,n_frames,n_fre这么多
                     mix_phase = []
+                    mix_angle = []
                     aim_fea = []  # 应该是bs,n_frames,n_fre这么多
                     aim_spkid = []  # np.zeros(config.batch_size)
                     aim_spkname = []
                     query = []  # 应该是batch_size，shape(query)的形式，用list再转换把
                     multi_spk_fea_list = []
                     multi_spk_wav_list = []
+                    multi_spk_angle_list = []
                 sample_idx[mix_k] += 1
 
         else:

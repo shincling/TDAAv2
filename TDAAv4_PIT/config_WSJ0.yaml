@@ -2,7 +2,7 @@
 data:  './data/data/save_data'
 log:  './data/data/log/'
 epoch:  300 #epoch总数
-batch_size: 3
+batch_size: 4
 param_init:  0.1
 optim:  'adam'
 loss: 'focal_loss'
@@ -33,7 +33,9 @@ save_interval:  2000
 max_generator_batches:  32
 metric:  ['hamming_loss', 'micro_f1']
 shared_vocab:  0
-WFM: 1
+WFM: 0
+PSM: 1
+frame_mask: 0
 MLMSE: 0
 beam_size:  5
 tmp_score: 0
@@ -43,6 +45,7 @@ ct_recu: 0 #控制是否采用att递减的ct构成
 
 # query选项部分
 use_emb: 0 #用transformer的类似spk emb的那个座位query
+PIT_training: 1
 
 use_tas: 0
 all_soft: 0 # 这个是决定global emb是不是全用soft的

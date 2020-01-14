@@ -112,6 +112,7 @@ def memory_efficiency_cross_entropy_loss(hidden_outputs, decoder, targets, crite
 
 def cross_entropy_loss(hidden_outputs, decoder, targets, criterion, config, sim_score=0):
     # hidden_outputs:[max_len,bs,512]
+    assert hidden_outputs.shape[:2]==targets.shape[:2]
     batch_size= targets.size()[1]
     targets=targets.view(-1)
     outputs = hidden_outputs.contiguous().view(-1, hidden_outputs.size(2))
@@ -158,6 +159,55 @@ def ss_loss(config, x_input_map_multi, multi_mask, y_multi_map, loss_multi_func,
 def ss_tas_loss(config,mix_wav,predict_wav, y_multi_wav, mix_length,loss_multi_func,wav_loss):
     loss = cal_loss_with_order(y_multi_wav,predict_wav,mix_length)[0]
     return loss
+
+def ss_pit_loss(config, x_input_map_multi, multi_mask, y_multi_map, loss_multi_func,wav_loss):
+    size=x_input_map_multi.shape
+    batch_size=size[0]
+    topk=size[1]
+    assert multi_mask.shape[-2:]==x_input_map_multi.shape[-2:]==y_multi_map.shape[-2:]
+    x_input_map_multi=x_input_map_multi.view(size)
+    multi_mask=multi_mask.view(size)
+    y_multi_map=y_multi_map.view(size)
+
+    # 应该是bs,c,T,F 这样的顺序
+    predict_multi_map = multi_mask * x_input_map_multi
+    y_multi_map = Variable(y_multi_map)
+
+    best_perms=[]
+    loss_multi_speech=0
+    for bs_idx in range(batch_size):
+        perm_this_batch=[]
+        tar=y_multi_map[bs_idx]
+        est=predict_multi_map[bs_idx]
+        assert topk==2
+        best_loss_mse_this_batch= -1
+        for idx,per in enumerate([[0,1],[1,0]]):
+            if idx == 0:
+                best_loss_mse_this_batch=loss_multi_func(est[per],tar)
+                perm_this_batch=per
+            else:
+                loss=loss_multi_func(est[per],tar)
+                if loss <= best_loss_mse_this_batch:
+                    best_loss_mse_this_batch=loss
+                    perm_this_batch=per
+        best_perms.append(perm_this_batch)
+        loss_multi_speech+=best_loss_mse_this_batch
+
+    loss_multi_speech /= batch_size
+    # loss_multi_speech = loss_multi_func(predict_multi_map.squeeze(), y_multi_map)
+    # loss_multi_speech = loss_multi_func(predict_multi_map, y_multi_map)
+
+    # 各通道和为１的loss部分,应该可以更多的带来差异
+    # y_sum_map=Variable(torch.ones(config.batch_size,config.mix_speech_len,config.speech_fre)).cuda()
+    # predict_sum_map=torch.sum(multi_mask,1)
+    # loss_multi_sum_speech=loss_multi_func(predict_sum_map,y_sum_map)
+    print(('loss 1 eval:  ', loss_multi_speech.data.cpu().numpy()))
+    # print('losssum eval :',loss_multi_sum_speech.data.cpu().numpy()
+    # loss_multi_speech=loss_multi_speech+0.5*loss_multi_sum_speech
+    # print(('evaling multi-abs norm this eval batch:', torch.abs(y_multi_map - predict_multi_map).norm().data.cpu().numpy()))
+    # loss_multi_speech=loss_multi_speech+3*loss_multi_sum_speech
+    # print(('loss for whole separation part:', loss_multi_speech.data.cpu().numpy()))
+    return loss_multi_speech, best_perms
 
 def cal_loss_with_order(source, estimate_source, source_lengths):
     """
