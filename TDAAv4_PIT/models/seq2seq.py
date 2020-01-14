@@ -48,11 +48,6 @@ class seq2seq(nn.Module):
     def compute_loss(self, hidden_outputs, targets, memory_efficiency):
         if 1:
             return models.cal_performance(hidden_outputs, self.decoder, targets, self.criterion, self.config)
-        if memory_efficiency:
-            return models.memory_efficiency_cross_entropy_loss(hidden_outputs, self.decoder, targets, self.criterion,
-                                                               self.config)
-        else:
-            return models.cross_entropy_loss(hidden_outputs, self.decoder, targets, self.criterion, self.config)
 
     def separation_loss(self, x_input_map_multi, masks, y_multi_map, Var='NoItem'):
         if not self.config.MLMSE:
@@ -103,43 +98,15 @@ class seq2seq(nn.Module):
             query=outputs[:,:-1]
         #outputs: bs,len+1(2+1),emb , embs是类似spk_emb的输入
         tgt = tgt.transpose(0, 1) # convert to output_len(2+2), bs
-        # predicted_maps = self.ss_model(src, outputs[:-1], tgt[1:-1], dict_spk2idx)
         if 1:
-            predicted_maps = self.ss_model(src_original, query, tgt[1:-1], dict_spk2idx)
+            if self.config.use_tas:
+                predicted_maps = self.ss_model(mix_wav,query.transpose(0, 1))
+            else:
+                predicted_maps = self.ss_model(src_original, query, tgt[1:-1], dict_spk2idx)
         else:
             # dec_enc_attn_list:nhead,bs,topk(2+1),T
             predicted_maps = self.ss_model(src_original, dec_enc_attn_list[:,:,:2], tgt[1:-1], dict_spk2idx)
         return outputs.transpose(0,1), tgt[1:], predicted_maps.transpose(0, 1), dec_enc_attn_list[-1] #n_head*b,topk+1,T
-
-        if not self.config.global_emb:
-            # outputs, final_state, embs = self.decoder(tgt[:-1], state, contexts.transpose(0, 1))
-            outputs, final_state, embs, gamma = self.decoder(tgt, state, contexts.transpose(0, 1))
-            # 这里的outputs就是没个step输出的隐层向量,大小是len+1,bs,emb（注意是第一个词到 EOS的总共）
-            if not self.config.hidden_mix:
-                predicted_maps = self.ss_model(src, outputs[:-1, :], tgt[1:-1],dict_spk2idx)
-            else:
-                mix = torch.cat((outputs[:-1, :], embs[1:]), dim=2)
-                predicted_maps = self.ss_model(src, mix, tgt[1:-1])
-
-        else:
-            outputs, final_state, global_embs, gamma = self.decoder(tgt, state, contexts.transpose(0, 1))
-            # 这里的outputs就是没个step输出的隐层向量,大小是len+1,bs,emb（注意是第一个词到 EOS的总共）
-            # global_embs topk,bs,emb
-            if self.config.use_tas:
-                predicted_maps = self.ss_model(mix_wav, global_embs.transpose(0,1))
-                if self.config.global_hidden:
-                    # predicted_maps = self.ss_model(mix_wav,outputs[1:].transpose(0,1)) #正确
-                    predicted_maps = self.ss_model(mix_wav,outputs[1:].transpose(0,1)) #错位
-                else:
-                    predicted_maps = self.ss_model(mix_wav, global_embs.transpose(0,1))
-            else:
-                if self.config.global_hidden:
-                    # predicted_maps = self.ss_model(src,outputs[:-1], tgt[1:-1], dict_spk2idx)
-                    predicted_maps = self.ss_model(src,outputs[1:], tgt[1:-1], dict_spk2idx)
-                else:
-                    predicted_maps = self.ss_model(src, global_embs, tgt[1:-1], dict_spk2idx)
-
-        return outputs, tgt[1:], predicted_maps.transpose(0, 1),gamma
 
     def sample(self, src, src_len):
         # src=src.squeeze()
@@ -164,6 +131,40 @@ class seq2seq(nn.Module):
         # targets = tgt[1:]
 
         return sample_ids.t(), alignments.t()
+
+    def pit_sample(self, src, src_len, dict_spk2idx, tgt, beam_size=1, src_original=None, mix_wav=None):
+        # 感觉这是个把一个batch里的数据按从长到短调整顺序的意思
+        # print(src.shape,src_original.shape)
+        if src_original is None:
+            src_original=src
+        src_original=src_original.transpose(0,1) # 确保要bs在第二维
+        lengths, indices = torch.sort(src_len.squeeze(0), dim=0, descending=True)
+        # todo: 这里只要一用排序，tgt那个就出问题，现在的长度都一样，所以没有排序也可以工作，这个得好好研究一下后面
+        # src = torch.index_select(src, dim=0, index=indices)
+        # tgt = torch.index_select(tgt, dim=0, index=indices)
+
+        src = src.transpose(0, 1)
+        tgt = tgt.transpose(0, 1) # convert to bs, output_len
+        if mix_wav is not None:
+            mix_wav=mix_wav.transpose(0,1)
+        contexts, *_ = self.encoder(src, lengths.data.tolist(),return_attns=True)  # context是：（batch_size,max_len,hidden_size×2方向）这么大
+        if self.config.PIT_training:
+            tgt_tmp=tgt.clone()
+            tgt_tmp[:,1]=1
+            tgt_tmp[:,2]=2
+            pred, gold, outputs,embs,dec_slf_attn_list, dec_enc_attn_list= self.decoder(tgt_tmp[:,1:-1], contexts, lengths.data.tolist(),return_attns=True)
+        else:
+            pred, gold, outputs,embs,dec_slf_attn_list, dec_enc_attn_list= self.decoder(tgt[:,1:-1], contexts, lengths.data.tolist())
+        if 0 and self.config.use_emb:
+            query=embs[:,1:]
+        else:
+            query=outputs[:,:-1]
+        #outputs: bs,len+1(2+1),emb , embs是类似spk_emb的输入
+        tgt = tgt.transpose(0, 1) # convert to output_len(2+2), bs
+        # predicted_maps = self.ss_model(src, outputs[:-1], tgt[1:-1], dict_spk2idx)
+        predicted_maps = self.ss_model(src_original, query, tgt[1:-1], dict_spk2idx)
+
+        return pred, predicted_maps
 
     def beam_sample(self, src, src_len, dict_spk2idx, tgt, beam_size=1, src_original=None, mix_wav=None):
 
