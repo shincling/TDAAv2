@@ -59,7 +59,7 @@ class seq2seq(nn.Module):
         return models.ss_pit_loss(self.config, x_input_map_multi, masks, y_multi_map, self.loss_for_ss,self.wav_loss)
 
     def separation_tas_loss(self, x_input_wav_multi,predict_wav, y_multi_wav,mix_lengths):
-        return models.ss_tas_loss(self.config, x_input_wav_multi,predict_wav, y_multi_wav, mix_lengths,self.loss_for_ss,self.wav_loss)
+        return models.ss_tas_pit_loss(self.config, x_input_wav_multi,predict_wav, y_multi_wav, mix_lengths,self.loss_for_ss,self.wav_loss)
 
     def update_var(self, x_input_map_multi, multi_masks, y_multi_map):
         predict_multi_map = torch.mean(multi_masks * x_input_map_multi, -2)  # 在时间维度上平均
@@ -100,13 +100,13 @@ class seq2seq(nn.Module):
         tgt = tgt.transpose(0, 1) # convert to output_len(2+2), bs
         if 1:
             if self.config.use_tas:
-                predicted_maps = self.ss_model(mix_wav,query.transpose(0, 1))
+                predicted_maps = self.ss_model(mix_wav,query)
             else:
                 predicted_maps = self.ss_model(src_original, query, tgt[1:-1], dict_spk2idx)
         else:
             # dec_enc_attn_list:nhead,bs,topk(2+1),T
             predicted_maps = self.ss_model(src_original, dec_enc_attn_list[:,:,:2], tgt[1:-1], dict_spk2idx)
-        return outputs.transpose(0,1), tgt[1:], predicted_maps.transpose(0, 1), dec_enc_attn_list[-1] #n_head*b,topk+1,T
+        return outputs.transpose(0,1), pred, tgt[1:], predicted_maps.transpose(0, 1), dec_enc_attn_list[-1] #n_head*b,topk+1,T
 
     def sample(self, src, src_len):
         # src=src.squeeze()

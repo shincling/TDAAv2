@@ -246,7 +246,8 @@ class TemporalConvNet(nn.Module):
         temporal_conv_net = nn.Sequential(*repeats)
         # [M, B, K] -> [M, C*N, K]
         # self.mask_conv1x1 = nn.Conv1d(B, C*N, 1, bias=False)
-        self.mask_conv1x1 = nn.Conv1d(B+256, N, 1, bias=False)
+        # self.mask_conv1x1 = nn.Conv1d(B+256, N, 1, bias=False)
+        self.mask_conv1x1 = nn.Conv1d(512+256, N, 1, bias=False)
         # 这个２５６和config的SPK_EMB_SIZE需要保持一致
         # Put together
         self.network = nn.Sequential(layer_norm,

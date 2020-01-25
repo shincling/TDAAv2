@@ -160,6 +160,10 @@ def ss_tas_loss(config,mix_wav,predict_wav, y_multi_wav, mix_length,loss_multi_f
     loss = cal_loss_with_order(y_multi_wav,predict_wav,mix_length)[0]
     return loss
 
+def ss_tas_pit_loss(config,mix_wav,predict_wav, y_multi_wav, mix_length,loss_multi_func,wav_loss):
+    loss, perms, max_snr_idx,max_snr, estimate_source, reorder_estimate_source =cal_loss_with_PIT(y_multi_wav,predict_wav,mix_length)
+    return loss, perms, max_snr_idx, max_snr, estimate_source, reorder_estimate_source
+
 def ss_pit_loss(config, x_input_map_multi, multi_mask, y_multi_map, loss_multi_func,wav_loss):
     size=x_input_map_multi.shape
     batch_size=size[0]
@@ -234,7 +238,7 @@ def cal_loss_with_PIT(source, estimate_source, source_lengths):
                                                       source_lengths)
     loss = 0 - torch.mean(max_snr)
     reorder_estimate_source = reorder_source(estimate_source, perms, max_snr_idx)
-    return loss, max_snr, estimate_source, reorder_estimate_source
+    return loss, perms, max_snr_idx,max_snr, estimate_source, reorder_estimate_source
 
 def cal_si_snr_with_order(source, estimate_source, source_lengths):
     """Calculate SI-SNR with given order.

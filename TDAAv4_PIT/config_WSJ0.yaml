@@ -2,7 +2,7 @@
 data:  './data/data/save_data'
 log:  './data/data/log/'
 epoch:  300 #epoch总数
-batch_size: 4
+batch_size: 8
 param_init:  0.1
 optim:  'adam'
 loss: 'focal_loss'
@@ -10,7 +10,7 @@ use_center_loss: 0
 #loss: 'cross_entropy'
 
 warmup: -1 # 设为-1就是原来的方式
-learning_rate:  0.0002 #如果不用warmup
+learning_rate:  0.0001 #如果不用warmup
 
 #warmup: 1600 #前warmup步开始热生，最后就是warmup**(-0.5)的这么大
 #learning_rate:  0.04 # 热生之后是learning_rate*warmup**(-0.5) 这么大
@@ -28,7 +28,7 @@ decoder_hidden_size:  512
 num_layers:  4
 dropout:  0.5
 max_tgt_len:  5
-eval_interval:  1000
+eval_interval:  2000
 save_interval:  2000
 max_generator_batches:  32
 metric:  ['hamming_loss', 'micro_f1']
@@ -47,7 +47,7 @@ ct_recu: 0 #控制是否采用att递减的ct构成
 use_emb: 0 #用transformer的类似spk emb的那个座位query
 PIT_training: 1
 
-use_tas: 0
+use_tas: 1
 all_soft: 0 # 这个是决定global emb是不是全用soft的
 
 global_emb:  1

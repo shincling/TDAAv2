@@ -506,17 +506,13 @@ def eval(epoch):
                 WFM_mask = WFM_mask.cuda()
 
         # try:
-        outputs, targets, multi_mask, dec_enc_attn_list = model(src, src_len, tgt, tgt_len,
-                                                                dict_spk2idx)  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
-        print('mask size:', multi_mask.size())
         if 1 and len(opt.gpus) > 1:
-            samples, alignment, hiddens, predicted_masks = model.module.beam_sample(src, src_len, dict_spk2idx, tgt,
+            samples,  predicted_masks = model.module.pit_sample(src, src_len, dict_spk2idx, tgt,
                                                                                     beam_size=config.beam_size)
         else:
-            samples,  predicted_masks = model.beam_sample(src, src_len, dict_spk2idx, tgt,
+            samples,  predicted_masks = model.pit_sample(src, src_len, dict_spk2idx, tgt,
                                                                              beam_size=config.beam_size)
-            samples = [samples]
-
+        samples=samples.max(2)[1].data.cpu().numpy()
         # except:
         #     continue
 
