@@ -2,7 +2,7 @@
 data:  './data/data/save_data'
 log:  './data/data/log/'
 epoch:  300 #epoch总数
-batch_size: 8
+batch_size: 3
 param_init:  0.1
 optim:  'adam'
 loss: 'focal_loss'
@@ -79,7 +79,7 @@ quchong_alpha: 1
 # 设定最小混叠说话人数，Minimum number of mixed speakers for training
 MIN_MIX:  2
 # 设定最大混叠说话人数，Maximum number of mixed speakers for training
-MAX_MIX:  2
+MAX_MIX:  3
 # mode: 1 纯净语音刺激, 2 图片刺激, 3 视频刺激, 4 top-down概念刺激
 MODE:  1
 # 数据集
