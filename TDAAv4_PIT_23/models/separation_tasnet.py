@@ -268,8 +268,9 @@ class TemporalConvNet(nn.Module):
         M, N, K = mixture_w.size()
         _, C, D = hidden_outputs.size()
         assert M==_
+        self.C = C
         original_sep= self.network(mixture_w).unsqueeze(1).expand(M,self.C,B,K)  # [M, N, K] -> [M, C, B, K]
-        hidden_outputs=hidden_outputs.unsqueeze(-1).expand(M,self.C, D, K)# [M,C,D,K]
+        hidden_outputs=hidden_outputs.unsqueeze(-1).expand(M, C, D, K)# [M,C,D,K]
         original_sep=torch.cat((original_sep,hidden_outputs),dim=2).view(-1,B+D,K) #[M*C,(B+D),K]
         score = self.mask_conv1x1(original_sep) # -> [M*C,N, K]
 

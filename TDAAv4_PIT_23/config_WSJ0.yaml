@@ -2,7 +2,7 @@
 data:  './data/data/save_data'
 log:  './data/data/log/'
 epoch:  300 #epoch总数
-batch_size: 3
+batch_size: 1
 param_init:  0.1
 optim:  'adam'
 loss: 'focal_loss'
@@ -10,7 +10,7 @@ use_center_loss: 0
 #loss: 'cross_entropy'
 
 warmup: -1 # 设为-1就是原来的方式
-learning_rate:  0.0001 #如果不用warmup
+learning_rate:  0.00004 #如果不用warmup
 
 #warmup: 1600 #前warmup步开始热生，最后就是warmup**(-0.5)的这么大
 #learning_rate:  0.04 # 热生之后是learning_rate*warmup**(-0.5) 这么大
@@ -120,7 +120,7 @@ FRAME_LENGTH: 256
 # 帧移(ms)
 FRAME_SHIFT:  64
 # 是否shuffle_batch,由于现在都是随机采样，这个参数没有意义了
-SHUFFLE_BATCH:  1
+SHUFFLE_BATCH:  0
 voice_dB: 2.5 # 配置从-db～db的随机音量大小变换
 noise_dB: -10 # 从noise——db 到 0 的噪音变换
 normalize: 1 #是否波形归一化

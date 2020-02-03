@@ -48,7 +48,7 @@ def cal_SDRi(src_ref, src_est, mix):
     Returns:
         average_SDRi
     """
-    src_anchor = np.stack([mix, mix], axis=0)
+    src_anchor = np.stack([mix for iii in range(src_ref.shape[0])], axis=0)
     if src_ref.shape[0]==1:
         src_anchor=src_anchor[0]
     sdr, sir, sar, popt = bss_eval_sources(src_ref, src_est)
@@ -101,6 +101,7 @@ def cal(path,tmp=None):
     print(('num of mixed :',mix_number))
     SDR_sum=np.array([])
     SDRi_sum=np.array([])
+    SISNR_sum=np.array([])
     for idx in range(mix_number):
         pre_speech_channel=[]
         aim_speech_channel=[]
@@ -123,28 +124,23 @@ def cal(path,tmp=None):
         assert mix_speech.shape[0]==1
         mix_speech=mix_speech[0]
 
-        # print aim_speech_channel.shape
-        # print pre_speech_channel.shape
-
-        # print('aim SDR:',aim_speech_channel[:,16000:16005])
-        # print('pre SDR:',pre_speech_channel[:,16000:16005])
         result=bss_eval_sources(aim_speech_channel,pre_speech_channel)
         print(('SDR',result))
         SDR_sum=np.append(SDR_sum,result[0])
 
-        # result=bss_eval_sources(aim_speech_channel,aim_speech_channel)
-        # result_sdri=cal_SDRi(aim_speech_channel,pre_speech_channel,mix_speech)
-        # print 'SDRi:',result_sdri
-        result_sdri=cal_SISNRi(aim_speech_channel,pre_speech_channel[result[-1]],mix_speech)
-        print(('SI-SNR',result))
-        # for ii in range(aim_speech_channel.shape[0]):
-        #     result=cal_SISNRi(aim_speech_channel[ii],pre_speech_channel[ii],mix_speech[ii])
-        #     print('SI-SNR',result)
+        result_sdri=cal_SDRi(aim_speech_channel,pre_speech_channel[result[-1]],mix_speech)
+        print(('SDRi',result_sdri))
         SDRi_sum=np.append(SDRi_sum,result_sdri)
 
+        result_snri=cal_SISNRi(aim_speech_channel,pre_speech_channel[result[-1]],mix_speech)
+        print(('SI-SNR',result_snri))
+        SISNR_sum=np.append(SISNR_sum,result_snri)
+
     print(('SDR_Aver for this batch:',SDR_sum.mean()))
+    print(('SDRi_Aver for this batch:',SDRi_sum.mean()))
+    print(('SI-SNR_Aver for this batch:',SISNR_sum.mean()))
     # print 'SDRi_Aver for this batch:',SDRi_sum.mean()
-    return SDR_sum.mean(),SDRi_sum.mean()
+    return SDR_sum.mean(),SISNR_sum.mean()
 
 # cal(path)
 

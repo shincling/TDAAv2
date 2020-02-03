@@ -417,7 +417,7 @@ def prepare_data(mode, train_or_test, min=None, max=None):
 
 train_len=[]
 if __name__ == '__main__':
-    train_data_gen = prepare_data('once', 'train')
+    train_data_gen = prepare_data('once', 'train',2,3)
     while True:
         next(train_data_gen)
     pass

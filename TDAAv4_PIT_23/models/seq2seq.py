@@ -87,8 +87,8 @@ class seq2seq(nn.Module):
         contexts, *_ = self.encoder(src, lengths.data.tolist(),return_attns=True)  # context是：（batch_size,max_len,hidden_size×2方向）这么大
         if self.config.PIT_training:
             tgt_tmp=tgt.clone()
-            tgt_tmp[:,1]=1
-            tgt_tmp[:,2]=2
+            for ii in range(tgt.shape[1]-2): # topk个循环
+                tgt_tmp[:,ii+1]=ii+1
             pred, gold, outputs,embs,dec_slf_attn_list, dec_enc_attn_list= self.decoder(tgt_tmp[:,1:-1], contexts, lengths.data.tolist(),return_attns=True)
         else:
             pred, gold, outputs,embs,dec_slf_attn_list, dec_enc_attn_list= self.decoder(tgt[:,1:-1], contexts, lengths.data.tolist())
@@ -187,15 +187,21 @@ class seq2seq(nn.Module):
         # _, ind = torch.sort(indices)
         # src = Variable(torch.index_select(src, dim=1, index=indices), volatile=True)
         contexts, *_ = self.encoder(src, lengths.data.cpu().numpy()[0])
-        best_hyps_dict=self.decoder.recognize_beam(contexts, list(dict_spk2idx.keys()),None)[0]
+        best_hyps_dict=self.decoder.recognize_beam_greddy(contexts, list(dict_spk2idx.keys()),None)[0]
+        print('hyps:',best_hyps_dict['yseq'])
 
         if self.config.use_emb:
             ss_embs = best_hyps_dict['dec_embs_input'][:,1:]  # to [ bs, decLen(3),dim]
         else:
             ss_embs = best_hyps_dict['dec_hiddens'][:,:-1]  # to [ bs, decLen(3),dim]
 
-        predicted_maps = self.ss_model(src_original, ss_embs, tgt[1:-1], dict_spk2idx)
-        return best_hyps_dict['yseq'][1:], predicted_maps
+
+        query=ss_embs
+        if self.config.use_tas:
+            predicted_maps = self.ss_model(mix_wav, query)
+        else:
+            predicted_maps = self.ss_model(src_original, query, tgt[1:-1], dict_spk2idx)
+        return best_hyps_dict['yseq'][1:], predicted_maps.transpose(0,1)
 
         #  (1b) Initialize for the decoder.
         def var(a):

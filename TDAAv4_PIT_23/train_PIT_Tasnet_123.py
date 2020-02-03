@@ -36,7 +36,8 @@ parser.add_argument('-gpus', default=[3], nargs='+', type=int,
 #parser.add_argument('-restore', default='data/data/log/2020-01-15-08:55:56/TDAAv3_PIT_84001.pt', type=str,
 #parser.add_argument('-restore', default='data/data/log/2020-01-16-00:38:07/TDAAv3_PIT_84001.pt', type=str,
 # parser.add_argument('-restore', default='data/data/log/2020-01-16-23:07:10/TDAAv3_PIT_284001.pt', type=str,
-parser.add_argument('-restore', default=None, type=str,
+parser.add_argument('-restore', default='TDAA_23_38001.pt', type=str,
+# parser.add_argument('-restore', default=None, type=str,
                     help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
                     help="Random seed")
@@ -44,7 +45,7 @@ parser.add_argument('-model', default='seq2seq', type=str,
                     help="Model selection")
 parser.add_argument('-score', default='', type=str,
                     help="score_fn")
-parser.add_argument('-notrain', default=0, type=bool,
+parser.add_argument('-notrain', default=1, type=bool,
                     help="train or not")
 parser.add_argument('-log', default='', type=str,
                     help="log directory")
@@ -248,9 +249,10 @@ def train(epoch):
         padded_mixture = padded_mixture.cuda().transpose(0,1)
         mixture_lengths = mixture_lengths.cuda()
         padded_source = padded_source.cuda()
+        topk_this_batch=int(len(raw_tgt[0]))
 
         # 要保证底下这几个都是longTensor(长整数）
-        tgt_max_len = config.MAX_MIX + 2  # with bos and eos.
+        tgt_max_len = topk_this_batch+2  # with bos and eos.
         tgt = Variable(torch.from_numpy(np.array(
             [[0] + [dict_spk2idx[spk] for spk in spks] + (tgt_max_len - len(spks) - 1) * [dict_spk2idx['<EOS>']] for
              spks in raw_tgt], dtype=np.int))).transpose(0, 1)  # 转换成数字，然后前后加开始和结束符号。
@@ -262,7 +264,7 @@ def train(epoch):
             siz = src.size()  # bs,T,F
             assert len(siz) == 3
             # topk_max = config.MAX_MIX  # 最多可能的topk个数
-            topk_max = 2  # 最多可能的topk个数
+            topk_max = topk_this_batch  # 最多可能的topk个数
             x_input_map_multi = torch.unsqueeze(src, 1).expand(siz[0], topk_max, siz[1], siz[2]).contiguous().view(-1, siz[1], siz[ 2])  # bs,topk,T,F
             feas_tgt_tmp = feas_tgt.view(siz[0], -1, siz[1], siz[2])
 
@@ -278,7 +280,7 @@ def train(epoch):
             siz = src.size()  # bs,T,F
             assert len(siz) == 3
             # topk_max = config.MAX_MIX  # 最多可能的topk个数
-            topk_max = 2  # 最多可能的topk个数
+            topk_max = topk_this_batch  # 最多可能的topk个数
             x_input_map_multi = torch.unsqueeze(src, 1).expand(siz[0], topk_max, siz[1], siz[2]).contiguous()  # bs,topk,T,F
             feas_tgt_tmp = feas_tgt.view(siz[0], -1, siz[1], siz[2])
 
@@ -297,7 +299,7 @@ def train(epoch):
             siz = src.size()  # bs,T,F
             assert len(siz) == 3
             # topk_max = config.MAX_MIX  # 最多可能的topk个数
-            topk_max = 2  # 最多可能的topk个数
+            topk_max = topk_this_batch  # 最多可能的topk个数
             x_input_map_multi = torch.unsqueeze(src, 1).expand(siz[0], topk_max, siz[1], siz[2]).contiguous()  # bs,topk,T,F
             feas_tgt_tmp = feas_tgt.view(siz[0], -1, siz[1], siz[2])
 
@@ -339,7 +341,7 @@ def train(epoch):
         # expand the raw mixed-features to topk_max channel.
         siz = src.size()
         assert len(siz) == 3
-        topk_max = config.MAX_MIX  # 最多可能的topk个数
+        topk_max = topk_this_batch  # 最多可能的topk个数
         x_input_map_multi = torch.unsqueeze(src, 1).expand(siz[0], topk_max, siz[1], siz[2]).contiguous()#.view(-1, siz[1], siz[2])
         # x_input_map_multi = x_input_map_multi[aim_list]
         multi_mask = multi_mask.transpose(0, 1)
@@ -465,7 +467,7 @@ def train(epoch):
             report_total = 0
             report_correct = 0
 
-        if 1 and updates % config.save_interval == 1:
+        if updates>10 and updates % config.save_interval == 1:
             save_model(log_path + 'TDAAv3_PIT_{}.pt'.format(updates))
 
 
@@ -477,7 +479,7 @@ def eval(epoch):
     e = epoch
     test_or_valid = 'test'
     test_or_valid = 'valid'
-    # test_or_valid = 'train'
+    # test_or_valid = 'tran'
     print(('Test or valid:', test_or_valid))
     eval_data_gen = prepare_data('once', test_or_valid, config.MIN_MIX, config.MAX_MIX)
     SDR_SUM = np.array([])
@@ -501,7 +503,9 @@ def eval(epoch):
         top_k = len(raw_tgt[0])
         # 要保证底下这几个都是longTensor(长整数）
         # tgt = Variable(torch.from_numpy(np.array([[0]+[dict_spk2idx[spk] for spk in spks]+[dict_spk2idx['<EOS>']] for spks in raw_tgt],dtype=np.int))).transpose(0,1) #转换成数字，然后前后加开始和结束符号。
-        tgt = Variable(torch.from_numpy(np.array([[0,1,2,102] for __ in range(config.batch_size)], dtype=np.int))).transpose(0, 1)  # 转换成数字，然后前后加开始和结束符号。
+        # tgt = Variable(torch.from_numpy(np.array([[0,1,2,102] for __ in range(config.batch_size)], dtype=np.int))).transpose(0, 1)  # 转换成数字，然后前后加开始和结束符号。
+        # tgt = Variable(torch.from_numpy(np.array([[0,1,2,3,102] for __ in range(config.batch_size)], dtype=np.int))).transpose(0, 1)  # 转换成数字，然后前后加开始和结束符号。
+        tgt = Variable(torch.from_numpy(np.array([list(range(top_k+1))+[102] for __ in range(config.batch_size)], dtype=np.int))).transpose(0, 1)  # 转换成数字，然后前后加开始和结束符号。
 
         padded_mixture, mixture_lengths, padded_source = eval_data['tas_zip']
         padded_mixture=torch.from_numpy(padded_mixture).float()
@@ -531,7 +535,7 @@ def eval(epoch):
             if config.WFM:
                 WFM_mask = WFM_mask.cuda()
 
-        # try:
+        '''
         if 1 and len(opt.gpus) > 1:
             outputs, pred,targets, multi_mask, dec_enc_attn_list = model(src, src_len, tgt, tgt_len, dict_spk2idx, None,
                                                                     mix_wav=padded_mixture)  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
@@ -539,6 +543,14 @@ def eval(epoch):
             outputs, pred,targets, multi_mask, dec_enc_attn_list = model(src, src_len, tgt, tgt_len, dict_spk2idx, None,
                                                                     mix_wav=padded_mixture)  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
         samples=list(pred.max(2)[1].data.cpu().numpy())
+        '''
+
+        if 1 and len(opt.gpus) > 1:
+            samples,  predicted_masks = model.module.beam_sample(src, src_len, dict_spk2idx, tgt, config.beam_size,None,padded_mixture)
+        else:
+            samples,  predicted_masks = model.beam_sample(src, src_len, dict_spk2idx, tgt, config.beam_size, None, padded_mixture)
+            multi_mask = predicted_masks
+            samples=[samples]
         # except:
         #     continue
 
@@ -550,7 +562,7 @@ def eval(epoch):
         # if samples[0][-1] != dict_spk2idx['<EOS>']:
         #     print '*'*40+'\nThe model is far from good. End the evaluation.\n'+'*'*40
         #     break
-        topk_max = len(samples[0]) - 1
+        topk_max = top_k
         x_input_map_multi = torch.unsqueeze(src, 1).expand(siz[0], topk_max, siz[1], siz[2])
         multi_mask = multi_mask.transpose(0, 1)
 
@@ -607,137 +619,6 @@ def eval(epoch):
                  result['micro_f1'], result['micro_precision'], result['micro_recall'],SDR_SUM.mean()])
     print(('hamming_loss: %.8f | micro_f1: %.4f'
           % (result['hamming_loss'], result['micro_f1'])))
-    score['hamming_loss'] = result['hamming_loss']
-    score['micro_f1'] = result['micro_f1']
-    1/0
-    return score
-
-def eval_recu(epoch):
-    assert config.batch_size==1
-    model.eval()
-    reference, candidate, source, alignments = [], [], [], []
-    e = epoch
-    test_or_valid = 'test'
-    test_or_valid = 'valid'
-    # test_or_valid = 'train'
-    print(('Test or valid:', test_or_valid))
-    eval_data_gen = prepare_data('once', test_or_valid, config.MIN_MIX, config.MAX_MIX)
-    SDR_SUM = np.array([])
-    SDRi_SUM = np.array([])
-    batch_idx = 0
-    global best_SDR, Var
-    while True:
-        print(('-' * 30))
-        eval_data = next(eval_data_gen)
-        if eval_data == False:
-            print(('SDR_aver_eval_epoch:', SDR_SUM.mean()))
-            print(('SDRi_aver_eval_epoch:', SDRi_SUM.mean()))
-            break  # 如果这个epoch的生成器没有数据了，直接进入下一个epoch
-        src = Variable(torch.from_numpy(eval_data['mix_feas']))
-
-        # raw_tgt = [sorted(spk.keys()) for spk in eval_data['multi_spk_fea_list']]
-        raw_tgt= eval_data['batch_order']
-        feas_tgt = models.rank_feas(raw_tgt, eval_data['multi_spk_fea_list'])  # 这里是目标的图谱
-
-        src_original=src.transpose(0,1) #To T,bs,F
-        predict_multi_mask_all=None
-        samples_list=[]
-        for len_idx in range(config.MIN_MIX+2,2,-1): #逐个分离
-            tgt_max_len = len_idx  # 4,3,2 with bos and eos.
-            topk_k=len_idx-2
-            tgt = Variable(torch.ones(len_idx, config.batch_size))  # 这里随便给一个tgt，为了测试阶段tgt的名字无所谓其实。
-            src_len = Variable(torch.LongTensor(config.batch_size).zero_() + mix_speech_len).unsqueeze(0)
-            tgt_len = Variable(
-                torch.LongTensor([tgt_max_len - 2 for one_spk in eval_data['multi_spk_fea_list']])).unsqueeze(0)
-            if use_cuda:
-                src = src.cuda().transpose(0, 1)  # to T,bs,fre
-                src_original = src_original.cuda()  # TO T,bs,fre
-                tgt = tgt.cuda()
-                src_len = src_len.cuda()
-                tgt_len = tgt_len.cuda()
-                feas_tgt = feas_tgt.cuda()
-
-            # try:
-            if len(opt.gpus) > 1:
-                samples, alignment, hiddens, predicted_masks = model.module.beam_sample(src, src_len, dict_spk2idx, tgt,
-                                                                                        config.beam_size,src_original)
-            else:
-                samples,  predicted_masks = model.beam_sample(src, src_len, dict_spk2idx, tgt, config.beam_size,src_original)
-
-            # except:
-            #     continue
-
-            # '''
-            # expand the raw mixed-features to topk_max channel.
-            src = src_original.transpose(0,1) #确保分离的时候用的是原始的语音
-            siz = src.size()
-            assert len(siz) == 3
-            topk_max = topk_k
-            x_input_map_multi = torch.unsqueeze(src, 1).expand(siz[0], topk_max, siz[1], siz[2])
-            if 0 and config.WFM:
-                feas_tgt = x_input_map_multi.data * WFM_mask
-
-            if len_idx==4:
-                aim_feas=list(range(0,2*config.batch_size,2)) #每个samples的第一个说话人取出来
-                predict_multi_mask_all=predicted_masks#bs*topk,T,F
-                src=src*(1-predicted_masks[aim_feas]) #调整到bs为第一维,# bs,T,F
-                samples_list=samples
-            elif len_idx==3:
-                aim_feas = list(range(1, 2 * config.batch_size, 2))#每个samples的第二个说话人取出来
-                predict_multi_mask_all[aim_feas]=predicted_masks
-                feas_tgt=feas_tgt[aim_feas]
-                samples_list=[samples_list[:1]+samples]
-
-            if test_or_valid != 'test':
-                if 1 and len(opt.gpus) > 1:
-                    ss_loss = model.module.separation_loss(x_input_map_multi, predicted_masks, feas_tgt, )
-                else:
-                    ss_loss = model.separation_loss(x_input_map_multi, predicted_masks, feas_tgt)
-                print(('loss for ss,this batch:', ss_loss.cpu().item()))
-                lera.log({
-                    'ss_loss_' + str(len_idx) + test_or_valid: ss_loss.cpu().item(),
-                })
-                del ss_loss
-
-        predicted_masks=predict_multi_mask_all
-        if batch_idx <= (500 / config.batch_size):  # only the former batches counts the SDR
-            predicted_maps = predicted_masks * x_input_map_multi
-            # predicted_maps=Variable(feas_tgt)
-            utils.bss_eval2(config, predicted_maps, eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_output_test')
-            del predicted_maps, predicted_masks, x_input_map_multi
-            try:
-                sdr_aver_batch, sdri_aver_batch=  bss_test.cal('batch_output_test/')
-                SDR_SUM = np.append(SDR_SUM, sdr_aver_batch)
-                SDRi_SUM = np.append(SDRi_SUM, sdri_aver_batch)
-            except(AssertionError):
-                print('Errors in calculating the SDR')
-            print(('SDR_aver_now:', SDR_SUM.mean()))
-            print(('SDRi_aver_now:', SDRi_SUM.mean()))
-            lera.log({'SDR sample'+test_or_valid: SDR_SUM.mean()})
-            lera.log({'SDRi sample'+test_or_valid: SDRi_SUM.mean()})
-            writer.add_scalars('scalar/loss',{'SDR_sample_'+test_or_valid:sdr_aver_batch},updates)
-            # raw_input('Press any key to continue......')
-
-        # '''
-        candidate += [convertToLabels(dict_idx2spk, s, dict_spk2idx['<EOS>']) for s in samples_list]
-        # source += raw_src
-        reference += raw_tgt
-        print(('samples:', samples))
-        print(('can:{}, \nref:{}'.format(candidate[-1 * config.batch_size:], reference[-1 * config.batch_size:])))
-        # alignments += [align for align in alignment]
-        batch_idx += 1
-        input('wait to continue......')
-
-        result = utils.eval_metrics(reference, candidate, dict_spk2idx, log_path)
-        print(('hamming_loss: %.8f | micro_f1: %.4f |recall: %.4f | precision: %.4f'
-               % (result['hamming_loss'], result['micro_f1'], result['micro_recall'], result['micro_precision'], )))
-
-    score = {}
-    result = utils.eval_metrics(reference, candidate, dict_spk2idx, log_path)
-    logging_csv([e, updates, result['hamming_loss'], \
-                 result['micro_f1'], result['micro_precision'], result['micro_recall'],SDR_SUM.mean()])
-    print(('hamming_loss: %.8f | micro_f1: %.4f'
-           % (result['hamming_loss'], result['micro_f1'])))
     score['hamming_loss'] = result['hamming_loss']
     score['micro_f1'] = result['micro_f1']
     1/0
