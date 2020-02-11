@@ -29,11 +29,12 @@ parser = argparse.ArgumentParser(description='train_WSJ0.py')
 
 parser.add_argument('-config', default='config_WSJ0.yaml', type=str,
                     help="config file")
-# parser.add_argument('-gpus', default=range(3), nargs='+', type=int,
+# parser.add_argument('-gpus', default=range(4), nargs='+', type=int,
 parser.add_argument('-gpus', default=[2,3], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
-# parser.add_argument('-restore', default='../TDAAv4/data/data/log/2020-01-02-08:50:49/TDAAv3_144001.pt', type=str,
-parser.add_argument('-restore', default='TDAAv3_PIT_30001.pt', type=str,
+# parser.add_argument('-restore', default='TDAAv3_PIT_30001.pt', type=str,
+parser.add_argument('-restore', default='Tranformer_PIT_30001.pt', type=str,
+# parser.add_argument('-restore', default='data/data/log/2020-02-07-05:01:34/Transformer_PIT_58001.pt', type=str,
 # parser.add_argument('-restore', default=None, type=str,
                     help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
@@ -42,7 +43,7 @@ parser.add_argument('-model', default='seq2seq', type=str,
                     help="Model selection")
 parser.add_argument('-score', default='', type=str,
                     help="score_fn")
-parser.add_argument('-notrain', default=1, type=bool,
+parser.add_argument('-notrain', default=0, type=bool,
                     help="train or not")
 parser.add_argument('-log', default='', type=str,
                     help="log directory")
@@ -61,8 +62,8 @@ torch.manual_seed(opt.seed)
 # checkpoint
 if opt.restore:
     print(('loading checkpoint...\n', opt.restore))
-    # checkpoints = torch.load(opt.restore,map_location={'cuda:2':'cuda:0'})
-    checkpoints = torch.load(opt.restore)
+    checkpoints = torch.load(opt.restore,map_location={'cuda:6':'cuda:0'})
+    # checkpoints = torch.load(opt.restore)
 
 # cuda
 use_cuda = torch.cuda.is_available() and len(opt.gpus) > 0
@@ -107,8 +108,6 @@ if config.use_center_loss:
 
 if opt.restore:
     model.load_state_dict(checkpoints['model'])
-    # model.encoder.load_state_dict({dd.replace('encoder.',''): checkpoints['model'][dd] for dd in checkpoints['model'] if 'encoder' in dd})
-    # model.decoder.load_state_dict({dd.replace('decoder.',''): checkpoints['model'][dd] for dd in checkpoints['model'] if 'decoder' in dd})
 if use_cuda:
     model.cuda()
 if len(opt.gpus) > 1:
@@ -133,7 +132,7 @@ if 0: # 如果只更新后面的部分
         v.requires_grad=False
 if config.schedule:
     # scheduler = L.CosineAnnealingLR(optim.optimizer, T_max=config.epoch)
-    scheduler = L.StepLR(optim.optimizer, step_size=15, gamma=0.2)
+    scheduler = L.StepLR(optim.optimizer, step_size=15, gamma=0.3)
 
 # total number of parameters
 param_count = 0
@@ -178,19 +177,19 @@ best_SDR = 0.0
 
 # train
 global_par_dict={
-    'title': str('TDAAv4 Transformer PIT'),
+    'title': str('Transformer PIT'),
     'updates': updates,
     'batch_size': config.batch_size,
-    'WFM': config.WFM,
-    'global_emb': config.global_emb,
-    'schmidt': config.schmidt,
     'log path': str(log_path),
-    'selfTune': config.is_SelfTune,
-    'cnn': config.speech_cnn_net,  # 是否采用CNN的结构来抽取
-    'relitu': config.relitu,
-    'ct_recu': config.ct_recu,  # 控制是否采用att递减的ct构成
     'loss':str(config.loss),
     'score fnc': str(opt.score_fc),
+    'trans_n_layers': config.trans_n_layers,
+    'trans_n_head':  config.trans_n_head,
+    'trans_d_k': config.trans_d_k,
+    'trans_d_v':  config.trans_d_v,
+    'trans_d_model': config.trans_d_model,
+    'trans_d_inner': config.trans_d_inner,
+    'trans_dropout': config.trans_dropout,
 }
 lera.log_hyperparams(global_par_dict)
 for item in list(global_par_dict.keys()):
@@ -206,9 +205,9 @@ def train(epoch):
 
     if updates<=config.warmup: #如果不在warm阶段就正常规划
        pass
-    elif config.schedule and scheduler.get_lr()[0]>5e-7:
+    elif config.schedule and scheduler.get_lr()[0]>4e-5:
         scheduler.step()
-        print(("Decaying learning rate to %g" % scheduler.get_lr()[0]))
+        print(("Decaying learning rate to %g" % scheduler.get_lr()[0],updates))
         lera.log({
             'lr': [group['lr'] for group in optim.optimizer.param_groups][0],
         })
@@ -217,7 +216,8 @@ def train(epoch):
         model.current_epoch = epoch
 
 
-    train_data_gen = prepare_data('once', 'train')
+    # train_data_gen = prepare_data('once', 'train')
+    train_data_gen = prepare_data('once', 'valid')
     while True:
         if updates <= config.warmup:  # 如果在warm就开始warmup
             tmp_lr =  config.learning_rate * min(max(updates,1)** (-0.5),
@@ -242,7 +242,7 @@ def train(epoch):
         # raw_tgt = [spk.keys() for spk in train_data['multi_spk_fea_list']]
         # raw_tgt = [sorted(spk.keys()) for spk in train_data['multi_spk_fea_list']]
         raw_tgt=train_data['batch_order']
-        feas_tgt = models.rank_feas(raw_tgt, train_data['multi_spk_fea_list'])  # 这里是目标的图谱,aim_size,len,fre
+        feas_tgt = models.rank_feas(raw_tgt, train_data['multi_spk_fea_list'])  # 这里是目标的图谱,bs*Topk,len,fre
 
         # 要保证底下这几个都是longTensor(长整数）
         tgt_max_len = config.MAX_MIX + 2  # with bos and eos.
@@ -284,7 +284,9 @@ def train(epoch):
             ang=np.cos(angle_mix-angle_tgt)
             ang=np.clip(ang,0,None)
 
-            feas_tgt = x_input_map_multi *IRM*ang # bs,topk,T,F
+            # feas_tgt = x_input_map_multi *np.clip(IRM.numpy()*ang,0,1) # bs,topk,T,F
+            # feas_tgt = x_input_map_multi *IRM*ang # bs,topk,T,F
+            feas_tgt = feas_tgt.view(siz[0],-1,siz[1],siz[2])*ang # bs,topk,T,F
             feas_tgt = feas_tgt.view(-1, siz[1], siz[2])  # bs*topk,T,F
             del x_input_map_multi
 
@@ -325,9 +327,10 @@ def train(epoch):
         aim_list = (tgt[1:-1].transpose(0, 1).contiguous().view(-1) != dict_spk2idx['<EOS>']).nonzero().squeeze()
         aim_list = aim_list.data.cpu().numpy()
 
-        outputs, targets, multi_mask, dec_enc_attn_list = model(src, src_len, tgt, tgt_len,
+        multi_mask, enc_attn_list = model(src, src_len, tgt, tgt_len,
                                              dict_spk2idx)  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
-        print('mask size:', multi_mask.size())
+        print('mask size:', multi_mask.size()) # topk,bs,T,F
+        # print('mask:', multi_mask[0,0,:3:3]) # topk,bs,T,F
         # writer.add_histogram('global gamma',gamma, updates)
 
 
@@ -338,9 +341,14 @@ def train(epoch):
         topk_max = config.MAX_MIX  # 最多可能的topk个数
         x_input_map_multi = torch.unsqueeze(src, 1).expand(siz[0], topk_max, siz[1], siz[2]).contiguous()#.view(-1, siz[1], siz[2])
         # x_input_map_multi = x_input_map_multi[aim_list]
+        # x_input_map_multi = x_input_map_multi.transpose(0, 1) #topk,bs,T,F
         multi_mask = multi_mask.transpose(0, 1)
         # if config.WFM:
         #     feas_tgt = x_input_map_multi.data * WFM_mask
+
+        # 注意,bs是第二维
+        assert multi_mask.shape == x_input_map_multi.shape
+        assert multi_mask.size(0) == config.batch_size
 
         if 1 and len(opt.gpus) > 1: #先ss获取Perm
             ss_loss, best_pmt = model.module.separation_pit_loss(x_input_map_multi, multi_mask, feas_tgt)
@@ -350,54 +358,24 @@ def train(epoch):
         print('best perms for this batch:', best_pmt)
         writer.add_scalars('scalar/loss',{'ss_loss':ss_loss.cpu().item()},updates)
 
-        # 按照Best_perm重新排列spk的预测目标
-        targets=targets.transpose(0,1) #bs,aim+1(EOS也在）
-        # print('targets',targets)
-        targets_old=targets
-        for idx,(tar,per) in enumerate(zip(targets,best_pmt)):
-            per.append(topk_max) #每个batch后面加个结尾，保持最后一个EOS不变
-            targets_old[idx]=tar[per]
-        targets=targets_old.transpose(0,1)
-        # print('targets',targets)
-
-        if 1 and len(opt.gpus) > 1:
-            sgm_loss, num_total, num_correct = model.module.compute_loss(outputs, targets, opt.memory)
-        else:
-            sgm_loss, num_total, num_correct = model.compute_loss(outputs, targets, opt.memory)
-        print(('loss for SGM,this batch:', sgm_loss.cpu().item()))
-        writer.add_scalars('scalar/loss',{'sgm_loss':sgm_loss.cpu().item()},updates)
-        if config.use_center_loss:
-            cen_alpha=0.01
-            cen_loss = center_loss(outputs.view(-1,config.SPK_EMB_SIZE), targets.view(-1))
-            print(('loss for SGM center loss,this batch:',cen_loss.cpu().item()))
-            writer.add_scalars('scalar/loss',{'center_loss':cen_loss.cpu().item()},updates)
-
-        loss = sgm_loss + 5 * ss_loss
-        # loss = sgm_loss
-        if config.use_center_loss:
-            loss = cen_loss*cen_alpha+ loss
-
+        loss = ss_loss
         loss.backward()
 
-        if config.use_center_loss:
-            for c_param in center_loss.parameters():
-                c_param.grad.data *= (0.01/(cen_alpha*scheduler.get_lr()[0]))
-        # print 'totallllllllllll loss:',loss
-        total_loss_sgm += sgm_loss.cpu().item()
         total_loss_ss += ss_loss.cpu().item()
         lera.log({
-            'sgm_loss': sgm_loss.cpu().item(),
             'ss_loss': ss_loss.cpu().item(),
-            'loss:': loss.cpu().item(),
         })
 
-        if updates>10 and updates % config.eval_interval in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]:
-            predicted_maps = multi_mask * x_input_map_multi.view(siz[0]*topk_max,siz[1],siz[2])
+        if updates>3 and updates % config.eval_interval in [0, 1, 2, 3, 4, 5]:
+            assert multi_mask.shape==x_input_map_multi.shape
+            assert multi_mask.size(0)==config.batch_size
+            predicted_maps = (multi_mask * x_input_map_multi).view(siz[0]*topk_max,siz[1],siz[2])
+
             # predicted_maps=Variable(feas_tgt)
-            utils.bss_eval(config, predicted_maps, train_data['multi_spk_fea_list'], raw_tgt, train_data, dst='batch_output1')
+            utils.bss_eval(config, predicted_maps, train_data['multi_spk_fea_list'], raw_tgt, train_data, dst=log_path+'batch_output/')
             # utils.bss_eval2(config, predicted_maps, train_data['multi_spk_fea_list'], raw_tgt, train_data, dst='batch_output1')
             del predicted_maps, multi_mask, x_input_map_multi
-            sdr_aver_batch, sdri_aver_batch=  bss_test.cal('batch_output1/')
+            sdr_aver_batch, sdri_aver_batch=  bss_test.cal(log_path+'batch_output/')
             lera.log({'SDR sample': sdr_aver_batch})
             lera.log({'SDRi sample': sdri_aver_batch})
             writer.add_scalars('scalar/loss',{'SDR_sample':sdr_aver_batch,'SDRi_sample':sdri_aver_batch},updates)
@@ -407,18 +385,13 @@ def train(epoch):
             print(('SDRi_aver_now:', SDRi_SUM.mean()))
 
         total_loss += loss.cpu().item()
-        report_correct += num_correct.cpu().item()
-        report_total += num_total.cpu().item()
         optim.step()
 
         updates += 1
         if updates % 30 == 0:
             logging(
-                "time: %6.3f, epoch: %3d, updates: %8d, train loss this batch: %6.3f,sgm loss: %6.6f,ss loss: %6.6f,label acc: %6.6f\n"
-                % (time.time() - start_time, epoch, updates, loss / num_total, total_loss_sgm / 30.0,
-                   total_loss_ss / 30.0, report_correct/report_total))
-            lera.log({'label_acc':report_correct/report_total})
-            writer.add_scalars('scalar/loss',{'label_acc':report_correct/report_total},updates)
+                "time: %6.3f, epoch: %3d, updates: %8d, train loss this batch: %6.3f,ss loss: %6.6f\n"
+                % (time.time() - start_time, epoch, updates, loss , total_loss_ss / 30.0))
             total_loss_sgm, total_loss_ss = 0, 0
 
         # continue
@@ -449,7 +422,7 @@ def train(epoch):
             report_correct = 0
 
         if 1 and updates % config.save_interval == 1:
-            save_model(log_path + 'TDAAv3_PIT_{}.pt'.format(updates))
+            save_model(log_path + 'Transformer_PIT_{}.pt'.format(updates))
 
 
 def eval(epoch):
@@ -459,7 +432,7 @@ def eval(epoch):
     reference, candidate, source, alignments = [], [], [], []
     e = epoch
     test_or_valid = 'test'
-    test_or_valid = 'valid'
+    # test_or_valid = 'valid'
     # test_or_valid = 'train'
     print(('Test or valid:', test_or_valid))
     eval_data_gen = prepare_data('once', test_or_valid, config.MIN_MIX, config.MAX_MIX)
@@ -490,11 +463,41 @@ def eval(epoch):
         tgt_len = Variable(torch.LongTensor([len(one_spk) for one_spk in eval_data['multi_spk_fea_list']])).unsqueeze(0)
         # tgt_len = Variable(torch.LongTensor(config.batch_size).zero_()+len(eval_data['multi_spk_fea_list'][0])).unsqueeze(0)
         if config.WFM:
-            tmp_size = feas_tgt.size()
-            assert len(tmp_size) == 3
-            feas_tgt_square = feas_tgt * feas_tgt
-            feas_tgt_sum_square = torch.sum(feas_tgt_square, dim=0, keepdim=True).expand(tmp_size)
+            siz = src.size()  # bs,T,F
+            assert len(siz) == 3
+            # topk_max = config.MAX_MIX  # 最多可能的topk个数
+            topk_max = 2  # 最多可能的topk个数
+            x_input_map_multi = torch.unsqueeze(src, 1).expand(siz[0], topk_max, siz[1], siz[2]).contiguous().view(-1, siz[1], siz[ 2])  # bs,topk,T,F
+            feas_tgt_tmp = feas_tgt.view(siz[0], -1, siz[1], siz[2])
+
+            feas_tgt_square = feas_tgt_tmp * feas_tgt_tmp
+            feas_tgt_sum_square = torch.sum(feas_tgt_square, dim=1, keepdim=True).expand(siz[0], topk_max, siz[1], siz[2])
             WFM_mask = feas_tgt_square / (feas_tgt_sum_square + 1e-15)
+            feas_tgt = x_input_map_multi.view(siz[0], -1, siz[1], siz[2]).data * WFM_mask  # bs,topk,T,F
+            feas_tgt = feas_tgt.view(-1, siz[1], siz[2])  # bs*topk,T,F
+            WFM_mask = WFM_mask.cuda()
+            del x_input_map_multi
+
+        elif config.PSM:
+            siz = src.size()  # bs,T,F
+            assert len(siz) == 3
+            # topk_max = config.MAX_MIX  # 最多可能的topk个数
+            topk_max = 2  # 最多可能的topk个数
+            x_input_map_multi = torch.unsqueeze(src, 1).expand(siz[0], topk_max, siz[1], siz[2]).contiguous()  # bs,topk,T,F
+            feas_tgt_tmp = feas_tgt.view(siz[0], -1, siz[1], siz[2])
+
+            IRM=feas_tgt_tmp/(x_input_map_multi+1e-15)
+
+            angle_tgt=models.rank_feas(raw_tgt, train_data['multi_spk_angle_list']).view(siz[0],-1,siz[1],siz[2])
+            angle_mix=Variable(torch.from_numpy(np.array(train_data['mix_angle']))).unsqueeze(1).expand(siz[0], topk_max, siz[1], siz[2]).contiguous()
+            ang=np.cos(angle_mix-angle_tgt)
+            ang=np.clip(ang,0,None)
+
+            # feas_tgt = x_input_map_multi *np.clip(IRM.numpy()*ang,0,1) # bs,topk,T,F
+            # feas_tgt = x_input_map_multi *IRM*ang # bs,topk,T,F
+            feas_tgt = feas_tgt.view(siz[0],-1,siz[1],siz[2])*ang # bs,topk,T,F
+            feas_tgt = feas_tgt.view(-1, siz[1], siz[2])  # bs*topk,T,F
+            del x_input_map_multi
 
         if use_cuda:
             src = src.cuda().transpose(0, 1)
@@ -507,12 +510,16 @@ def eval(epoch):
 
         # try:
         if 1 and len(opt.gpus) > 1:
-            samples,  predicted_masks = model.module.pit_sample(src, src_len, dict_spk2idx, tgt,
-                                                                                    beam_size=config.beam_size)
+            # samples,  predicted_masks = model.module.pit_sample(src, src_len, dict_spk2idx, tgt,
+            #                                                                         beam_size=config.beam_size)
+            predicted_masks, enc_attn_list = model.module(src, src_len, tgt, tgt_len,
+                                              dict_spk2idx)  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
         else:
-            samples,  predicted_masks = model.pit_sample(src, src_len, dict_spk2idx, tgt,
-                                                                             beam_size=config.beam_size)
-        samples=samples.max(2)[1].data.cpu().numpy()
+            # samples,  predicted_masks = model.pit_sample(src, src_len, dict_spk2idx, tgt,
+            #                                                                  beam_size=config.beam_size)
+            predicted_masks, enc_attn_list = model(src, src_len, tgt, tgt_len,
+                                              dict_spk2idx)  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
+        # samples=samples.max(2)[1].data.cpu().numpy()
         # except:
         #     continue
 
@@ -524,25 +531,24 @@ def eval(epoch):
         # if samples[0][-1] != dict_spk2idx['<EOS>']:
         #     print '*'*40+'\nThe model is far from good. End the evaluation.\n'+'*'*40
         #     break
-        topk_max = len(samples[0]) - 1
+        topk_max = config.MAX_MIX
         x_input_map_multi = torch.unsqueeze(src, 1).expand(siz[0], topk_max, siz[1], siz[2])
-        if 1 and config.WFM:
-            feas_tgt = x_input_map_multi.data * WFM_mask
 
-        if test_or_valid != 'test':
-            if 1 and len(opt.gpus) > 1:
-                ss_loss = model.module.separation_loss(x_input_map_multi, predicted_masks, feas_tgt, )
-            else:
-                ss_loss = model.separation_loss(x_input_map_multi, predicted_masks, feas_tgt)
-            print(('loss for ss,this batch:', ss_loss.cpu().item()))
-            lera.log({
-                'ss_loss_' + test_or_valid: ss_loss.cpu().item(),
-            })
-            del ss_loss
+        if 1 and len(opt.gpus) > 1:
+            ss_loss,best_pmt = model.module.separation_pit_loss(x_input_map_multi, predicted_masks, feas_tgt, )
+        else:
+            ss_loss,best_pmt = model.separation_pit_loss(x_input_map_multi, predicted_masks, feas_tgt)
+        print(('loss for ss,this batch:', ss_loss.cpu().item()))
+        print('best perms for this batch:', best_pmt)
+        lera.log({
+            'ss_loss_' + test_or_valid: ss_loss.cpu().item(),
+        })
+        del ss_loss
 
         # '''''
         if 1 and batch_idx <= (500 / config.batch_size):  # only the former batches counts the SDR
-            predicted_maps = predicted_masks * x_input_map_multi
+            predicted_maps = predicted_masks.transpose(0,1) * x_input_map_multi
+            predicted_maps = predicted_maps.view(-1,mix_speech_len,speech_fre)
             # predicted_maps=Variable(feas_tgt)
             utils.bss_eval2(config, predicted_maps, eval_data['multi_spk_fea_list'], raw_tgt, eval_data,
                             dst='batch_output_test')
@@ -554,7 +560,7 @@ def eval(epoch):
             except(AssertionError):
                 print('Errors in calculating the SDR')
             print(('SDR_aver_now:', SDR_SUM.mean()))
-            print(('SDRi_aver_now:', SDRi_SUM.mean()))
+            print(('SRi_aver_now:', SDRi_SUM.mean()))
             lera.log({'SDR sample'+test_or_valid: SDR_SUM.mean()})
             lera.log({'SDRi sample'+test_or_valid: SDRi_SUM.mean()})
             writer.add_scalars('scalar/loss',{'SDR_sample_'+test_or_valid:sdr_aver_batch},updates)
@@ -565,11 +571,11 @@ def eval(epoch):
             # save_model(log_path+'checkpoint_bestSDR{}.pt'.format(best_SDR))
 
         # '''
-        candidate += [convertToLabels(dict_idx2spk, s, dict_spk2idx['<EOS>']) for s in samples]
+        # candidate += [convertToLabels(dict_idx2spk, s, dict_spk2idx['<EOS>']) for s in samples]
         # source += raw_src
-        reference += raw_tgt
-        print(('samples:', samples))
-        print(('can:{}, \nref:{}'.format(candidate[-1 * config.batch_size:], reference[-1 * config.batch_size:])))
+        # reference += raw_tgt
+        # print(('samples:', samples))
+        # print(('can:{}, \nref:{}'.format(candidate[-1 * config.batch_size:], reference[-1 * config.batch_size:])))
         # alignments += [align for align in alignment]
         batch_idx += 1
 
@@ -588,136 +594,6 @@ def eval(epoch):
     1/0
     return score
 
-def eval_recu(epoch):
-    assert config.batch_size==1
-    model.eval()
-    reference, candidate, source, alignments = [], [], [], []
-    e = epoch
-    test_or_valid = 'test'
-    test_or_valid = 'valid'
-    # test_or_valid = 'train'
-    print(('Test or valid:', test_or_valid))
-    eval_data_gen = prepare_data('once', test_or_valid, config.MIN_MIX, config.MAX_MIX)
-    SDR_SUM = np.array([])
-    SDRi_SUM = np.array([])
-    batch_idx = 0
-    global best_SDR, Var
-    while True:
-        print(('-' * 30))
-        eval_data = next(eval_data_gen)
-        if eval_data == False:
-            print(('SDR_aver_eval_epoch:', SDR_SUM.mean()))
-            print(('SDRi_aver_eval_epoch:', SDRi_SUM.mean()))
-            break  # 如果这个epoch的生成器没有数据了，直接进入下一个epoch
-        src = Variable(torch.from_numpy(eval_data['mix_feas']))
-
-        # raw_tgt = [sorted(spk.keys()) for spk in eval_data['multi_spk_fea_list']]
-        raw_tgt= eval_data['batch_order']
-        feas_tgt = models.rank_feas(raw_tgt, eval_data['multi_spk_fea_list'])  # 这里是目标的图谱
-
-        src_original=src.transpose(0,1) #To T,bs,F
-        predict_multi_mask_all=None
-        samples_list=[]
-        for len_idx in range(config.MIN_MIX+2,2,-1): #逐个分离
-            tgt_max_len = len_idx  # 4,3,2 with bos and eos.
-            topk_k=len_idx-2
-            tgt = Variable(torch.ones(len_idx, config.batch_size))  # 这里随便给一个tgt，为了测试阶段tgt的名字无所谓其实。
-            src_len = Variable(torch.LongTensor(config.batch_size).zero_() + mix_speech_len).unsqueeze(0)
-            tgt_len = Variable(
-                torch.LongTensor([tgt_max_len - 2 for one_spk in eval_data['multi_spk_fea_list']])).unsqueeze(0)
-            if use_cuda:
-                src = src.cuda().transpose(0, 1)  # to T,bs,fre
-                src_original = src_original.cuda()  # TO T,bs,fre
-                tgt = tgt.cuda()
-                src_len = src_len.cuda()
-                tgt_len = tgt_len.cuda()
-                feas_tgt = feas_tgt.cuda()
-
-            # try:
-            if len(opt.gpus) > 1:
-                samples, alignment, hiddens, predicted_masks = model.module.beam_sample(src, src_len, dict_spk2idx, tgt,
-                                                                                        config.beam_size,src_original)
-            else:
-                samples,  predicted_masks = model.beam_sample(src, src_len, dict_spk2idx, tgt, config.beam_size,src_original)
-
-            # except:
-            #     continue
-
-            # '''
-            # expand the raw mixed-features to topk_max channel.
-            src = src_original.transpose(0,1) #确保分离的时候用的是原始的语音
-            siz = src.size()
-            assert len(siz) == 3
-            topk_max = topk_k
-            x_input_map_multi = torch.unsqueeze(src, 1).expand(siz[0], topk_max, siz[1], siz[2])
-            if 0 and config.WFM:
-                feas_tgt = x_input_map_multi.data * WFM_mask
-
-            if len_idx==4:
-                aim_feas=list(range(0,2*config.batch_size,2)) #每个samples的第一个说话人取出来
-                predict_multi_mask_all=predicted_masks#bs*topk,T,F
-                src=src*(1-predicted_masks[aim_feas]) #调整到bs为第一维,# bs,T,F
-                samples_list=samples
-            elif len_idx==3:
-                aim_feas = list(range(1, 2 * config.batch_size, 2))#每个samples的第二个说话人取出来
-                predict_multi_mask_all[aim_feas]=predicted_masks
-                feas_tgt=feas_tgt[aim_feas]
-                samples_list=[samples_list[:1]+samples]
-
-            if test_or_valid != 'test':
-                if 1 and len(opt.gpus) > 1:
-                    ss_loss = model.module.separation_loss(x_input_map_multi, predicted_masks, feas_tgt, )
-                else:
-                    ss_loss = model.separation_loss(x_input_map_multi, predicted_masks, feas_tgt)
-                print(('loss for ss,this batch:', ss_loss.cpu().item()))
-                lera.log({
-                    'ss_loss_' + str(len_idx) + test_or_valid: ss_loss.cpu().item(),
-                })
-                del ss_loss
-
-        predicted_masks=predict_multi_mask_all
-        if batch_idx <= (500 / config.batch_size):  # only the former batches counts the SDR
-            predicted_maps = predicted_masks * x_input_map_multi
-            # predicted_maps=Variable(feas_tgt)
-            utils.bss_eval2(config, predicted_maps, eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst='batch_output_test')
-            del predicted_maps, predicted_masks, x_input_map_multi
-            try:
-                sdr_aver_batch, sdri_aver_batch=  bss_test.cal('batch_output_test/')
-                SDR_SUM = np.append(SDR_SUM, sdr_aver_batch)
-                SDRi_SUM = np.append(SDRi_SUM, sdri_aver_batch)
-            except(AssertionError):
-                print('Errors in calculating the SDR')
-            print(('SDR_aver_now:', SDR_SUM.mean()))
-            print(('SDRi_aver_now:', SDRi_SUM.mean()))
-            lera.log({'SDR sample'+test_or_valid: SDR_SUM.mean()})
-            lera.log({'SDRi sample'+test_or_valid: SDRi_SUM.mean()})
-            writer.add_scalars('scalar/loss',{'SDR_sample_'+test_or_valid:sdr_aver_batch},updates)
-            # raw_input('Press any key to continue......')
-
-        # '''
-        candidate += [convertToLabels(dict_idx2spk, s, dict_spk2idx['<EOS>']) for s in samples_list]
-        # source += raw_src
-        reference += raw_tgt
-        print(('samples:', samples))
-        print(('can:{}, \nref:{}'.format(candidate[-1 * config.batch_size:], reference[-1 * config.batch_size:])))
-        # alignments += [align for align in alignment]
-        batch_idx += 1
-        input('wait to continue......')
-
-        result = utils.eval_metrics(reference, candidate, dict_spk2idx, log_path)
-        print(('hamming_loss: %.8f | micro_f1: %.4f |recall: %.4f | precision: %.4f'
-               % (result['hamming_loss'], result['micro_f1'], result['micro_recall'], result['micro_precision'], )))
-
-    score = {}
-    result = utils.eval_metrics(reference, candidate, dict_spk2idx, log_path)
-    logging_csv([e, updates, result['hamming_loss'], \
-                 result['micro_f1'], result['micro_precision'], result['micro_recall'],SDR_SUM.mean()])
-    print(('hamming_loss: %.8f | micro_f1: %.4f'
-           % (result['hamming_loss'], result['micro_f1'])))
-    score['hamming_loss'] = result['hamming_loss']
-    score['micro_f1'] = result['micro_f1']
-    1/0
-    return score
 
 # Convert `idx` to labels. If index `stop` is reached, convert it and return.
 def convertToLabels(dict, idx, stop):
@@ -752,6 +628,7 @@ def main():
             eval(i)
             # eval_recu(i)
     for metric in config.metric:
+        print('updates:',updates)
         logging("Best %s score: %.2f\n" % (metric, max(scores[metric])))
 
 

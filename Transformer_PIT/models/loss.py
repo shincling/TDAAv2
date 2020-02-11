@@ -169,8 +169,8 @@ def ss_pit_loss(config, x_input_map_multi, multi_mask, y_multi_map, loss_multi_f
     batch_size=size[0]
     topk=size[1]
     assert multi_mask.shape[-2:]==x_input_map_multi.shape[-2:]==y_multi_map.shape[-2:]
-    x_input_map_multi=x_input_map_multi.view(size)
-    multi_mask=multi_mask.view(size)
+    x_input_map_multi=x_input_map_multi.contiguous().view(size)
+    multi_mask=multi_mask.contiguous().view(size)
     y_multi_map=y_multi_map.view(size)
 
     # 应该是bs,c,T,F 这样的顺序

@@ -61,7 +61,7 @@ class MultiHeadAttention(nn.Module):
         output = self.dropout(self.fc(output))
         output = self.layer_norm(output + residual)
 
-        return output, attn
+        return output, attn # (n*b) x lq x lq
 
 
 class ScaledDotProductAttention(nn.Module):
@@ -168,20 +168,20 @@ class TransEncoder(nn.Module):
     """Encoder of Transformer including self-attention and feed forward.
     """
 
-    def __init__(self, config, d_input, n_layers=1, n_head=8, d_k=64, d_v=64,
+    def __init__(self, config, d_input, n_layers=2, n_head=4, d_k=64, d_v=64,
                  d_model=512, d_inner=2048, dropout=0.1, pe_maxlen=5000):
         super(TransEncoder, self).__init__()
         # parameters
         self.config = config
         self.d_input = d_input
-        self.n_layers = n_layers
-        self.n_head = n_head
-        self.d_k = d_k
-        self.d_v = d_v
-        self.d_model = d_model
-        self.d_inner = d_inner
-        self.dropout_rate = dropout
-        self.pe_maxlen = pe_maxlen
+        self.n_layers = config.trans_n_layers
+        self.n_head = config.trans_n_head
+        self.d_k = config.trans_d_k
+        self.d_v = config.trans_d_v
+        self.d_model = config.trans_d_model
+        self.d_inner = config.trans_d_inner
+        self.dropout_rate = config.trans_dropout
+        self.pe_maxlen = config.trans_pe_maxlen
 
         # use linear transformation with layer norm to replace input embedding
         self.linear_in = nn.Linear(d_input, d_model)
@@ -219,7 +219,7 @@ class TransEncoder(nn.Module):
                 non_pad_mask=non_pad_mask,
                 slf_attn_mask=slf_attn_mask)
             if return_attns:
-                enc_slf_attn_list += [enc_slf_attn]
+                enc_slf_attn_list += [enc_slf_attn] # n_layer个 (n*b) x lq x dk
 
         if return_attns:
             return enc_output, enc_slf_attn_list
@@ -247,7 +247,7 @@ class EncoderLayer(nn.Module):
         enc_output = self.pos_ffn(enc_output)
         enc_output *= non_pad_mask
 
-        return enc_output, enc_slf_attn
+        return enc_output, enc_slf_attn #(n*b) x lq x lq
 
 class TransDecoder(nn.Module):
     ''' A decoder model with self attention mechanism. '''

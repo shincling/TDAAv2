@@ -2,7 +2,7 @@
 data:  './data/data/save_data'
 log:  './data/data/log/'
 epoch:  300 #epoch总数
-batch_size: 2
+batch_size: 4
 param_init:  0.1
 optim:  'adam'
 loss: 'focal_loss'
@@ -10,10 +10,13 @@ use_center_loss: 0
 #loss: 'cross_entropy'
 
 warmup: -1 # 设为-1就是原来的方式
-learning_rate:  0.0001 #如果不用warmup
+learning_rate:  0.00005 #如果不用warmup
 
 #warmup: 1600 #前warmup步开始热生，最后就是warmup**(-0.5)的这么大
 #learning_rate:  0.04 # 热生之后是learning_rate*warmup**(-0.5) 这么大
+
+#warmup: 1000 #前warmup步开始热生，最后就是warmup**(-0.5)的这么大
+#learning_rate:  0.01 # 热生之后是learning_rate*warmup**(-0.5) 这么大
 
 max_grad_norm:  5
 learning_rate_decay:  0.5
@@ -28,16 +31,15 @@ decoder_hidden_size:  512
 num_layers:  4
 dropout:  0.5
 max_tgt_len:  5
-eval_interval:  2000
-save_interval:  2000
+eval_interval:  1000
+save_interval:  1000
 max_generator_batches:  32
 metric:  ['hamming_loss', 'micro_f1']
 shared_vocab:  0
 WFM: 0
 PSM: 1
 frame_mask: 0
-MLMSE: 0
-beam_size:  5
+
 tmp_score: 0
 #tmp_score: 50000
 top1: 0 #控制是否用top-1的方法来生产第二个通道
@@ -47,7 +49,7 @@ ct_recu: 0 #控制是否采用att递减的ct构成
 use_emb: 0 #用transformer的类似spk emb的那个座位query
 PIT_training: 1
 
-use_tas: 1
+use_tas: 0
 all_soft: 0 # 这个是决定global emb是不是全用soft的
 
 global_emb:  1
@@ -77,9 +79,9 @@ quchong_alpha: 1
 
 
 # 设定最小混叠说话人数，Minimum number of mixed speakers for training
-MIN_MIX:  3
+MIN_MIX:  2
 # 设定最大混叠说话人数，Maximum number of mixed speakers for training
-MAX_MIX:  3
+MAX_MIX:  2
 # mode: 1 纯净语音刺激, 2 图片刺激, 3 视频刺激, 4 top-down概念刺激
 MODE:  1
 # 数据集
@@ -138,3 +140,13 @@ IS_LOG_SPECTRAL :  0
 # DB_THRESHOLD :  40  # None
 # 添加背景噪音（Str）
 channel_first: 1
+
+# transformer encoder部分
+trans_n_layers: 2
+trans_n_head: 4
+trans_d_k: 64
+trans_d_v: 64
+trans_d_model: 512
+trans_d_inner: 1024
+trans_dropout: 0.1
+trans_pe_maxlen: 5000

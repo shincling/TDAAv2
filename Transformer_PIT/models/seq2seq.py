@@ -39,21 +39,21 @@ class seq2seq(nn.Module):
 
         speech_fre = input_emb_size
         num_labels = tgt_vocab_size
-        if config.use_tas:
-            self.ss_model = models.ConvTasNet(config)
-        else:
-            # self.ss_model = models.SS_att(config, speech_fre, mix_speech_len, num_labels)
-            self.ss_model = models.SS(config, speech_fre, mix_speech_len, num_labels)
+        self.separation_linear=nn.Linear(self.encoder.d_model,2*speech_fre)
+        self.speech_fre=speech_fre
+
+        # if config.use_tas:
+        #     self.ss_model = models.ConvTasNet(config)
+        # else:
+        #     self.ss_model = models.SS_att(config, speech_fre, mix_speech_len, num_labels)
+        #     self.ss_model = models.SS(config, speech_fre, mix_speech_len, num_labels)
 
     def compute_loss(self, hidden_outputs, targets, memory_efficiency):
         if 1:
             return models.cal_performance(hidden_outputs, self.decoder, targets, self.criterion, self.config)
 
     def separation_loss(self, x_input_map_multi, masks, y_multi_map, Var='NoItem'):
-        if not self.config.MLMSE:
-            return models.ss_loss(self.config, x_input_map_multi, masks, y_multi_map, self.loss_for_ss,self.wav_loss)
-        else:
-            return models.ss_loss_MLMSE(self.config, x_input_map_multi, masks, y_multi_map, self.loss_for_ss, Var)
+        return models.ss_loss(self.config, x_input_map_multi, masks, y_multi_map, self.loss_for_ss,self.wav_loss)
 
     def separation_pit_loss(self, x_input_map_multi, masks, y_multi_map):
         return models.ss_pit_loss(self.config, x_input_map_multi, masks, y_multi_map, self.loss_for_ss,self.wav_loss)
@@ -71,6 +71,7 @@ class seq2seq(nn.Module):
 
     def forward(self, src, src_len, tgt, tgt_len, dict_spk2idx,src_original=None,mix_wav=None,):
         # 感觉这是个把一个batch里的数据按从长到短调整顺序的意思
+        # src:T,BS,F
         # print(src.shape,src_original.shape)
         if src_original is None:
             src_original=src
@@ -80,11 +81,19 @@ class seq2seq(nn.Module):
         # src = torch.index_select(src, dim=0, index=indices)
         # tgt = torch.index_select(tgt, dim=0, index=indices)
 
-        src = src.transpose(0, 1)
+        src = src.transpose(0, 1) #BS,T,F
         tgt = tgt.transpose(0, 1) # convert to bs, output_len
         if mix_wav is not None:
             mix_wav=mix_wav.transpose(0,1)
-        contexts, *_ = self.encoder(src, lengths.data.tolist(),return_attns=True)  # context是：（batch_size,max_len,hidden_size×2方向）这么大
+        contexts, enc_attn_list= self.encoder(src, lengths.data.tolist(),return_attns=True)  # context是：（batch_size,max_len,hidden_size×2方向）这么大
+        if 0 and self.config.PSM:
+            predicted_maps = F.relu(self.separation_linear(contexts)) #bs,T,2*F
+        else:
+            predicted_maps = F.sigmoid(self.separation_linear(contexts))  # bs,T,2*F
+        predicted_maps = predicted_maps.view(predicted_maps.size(0), predicted_maps.size(1),2,self.speech_fre) # bs,T,2,F
+        predicted_maps = predicted_maps.transpose(1,2) #bs,2,T,F
+        return predicted_maps.transpose(0,1),enc_attn_list
+
         if self.config.PIT_training:
             tgt_tmp=tgt.clone()
             tgt_tmp[:,1]=1
