@@ -92,7 +92,7 @@ class seq2seq(nn.Module):
             predicted_maps = F.sigmoid(self.separation_linear(contexts))  # bs,T,2*F
         predicted_maps = predicted_maps.view(predicted_maps.size(0), predicted_maps.size(1),2,self.speech_fre) # bs,T,2,F
         predicted_maps = predicted_maps.transpose(1,2) #bs,2,T,F
-        return predicted_maps.transpose(0,1),enc_attn_list
+        return predicted_maps.transpose(0,1),enc_attn_list# n_layer个 (head*bs) x lq x dk
 
         if self.config.PIT_training:
             tgt_tmp=tgt.clone()

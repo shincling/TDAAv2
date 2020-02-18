@@ -169,6 +169,7 @@ def ss_pit_loss(config, x_input_map_multi, multi_mask, y_multi_map, loss_multi_f
     batch_size=size[0]
     topk=size[1]
     assert multi_mask.shape[-2:]==x_input_map_multi.shape[-2:]==y_multi_map.shape[-2:]
+    assert multi_mask.shape==x_input_map_multi.shape
     x_input_map_multi=x_input_map_multi.contiguous().view(size)
     multi_mask=multi_mask.contiguous().view(size)
     y_multi_map=y_multi_map.view(size)
@@ -195,9 +196,9 @@ def ss_pit_loss(config, x_input_map_multi, multi_mask, y_multi_map, loss_multi_f
                     best_loss_mse_this_batch=loss
                     perm_this_batch=per
         best_perms.append(perm_this_batch)
-        loss_multi_speech+=best_loss_mse_this_batch
+        loss_multi_speech=loss_multi_speech+best_loss_mse_this_batch
 
-    loss_multi_speech /= batch_size
+    loss_multi_speech = loss_multi_speech / batch_size
     # loss_multi_speech = loss_multi_func(predict_multi_map.squeeze(), y_multi_map)
     # loss_multi_speech = loss_multi_func(predict_multi_map, y_multi_map)
 

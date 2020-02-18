@@ -219,7 +219,7 @@ class TransEncoder(nn.Module):
                 non_pad_mask=non_pad_mask,
                 slf_attn_mask=slf_attn_mask)
             if return_attns:
-                enc_slf_attn_list += [enc_slf_attn] # n_layer个 (n*b) x lq x dk
+                enc_slf_attn_list += [enc_slf_attn] # n_layer个 (head*bs) x lq x dk
 
         if return_attns:
             return enc_output, enc_slf_attn_list

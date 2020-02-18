@@ -121,6 +121,7 @@ def bss_eval(config, predict_multi_map, y_multi_map, y_map_gtruth, train_data, d
     for sample_idx, each_sample in enumerate(train_data['multi_spk_wav_list']):
         for each_spk in list(each_sample.keys()):
             this_spk = each_spk
+            print(this_spk)
             wav_genTrue = each_sample[this_spk]
             # min_len = 39936
             min_len = len(wav_genTrue)
@@ -169,6 +170,8 @@ def bss_eval2(config, predict_multi_map, y_multi_map, y_map_gtruth, train_data, 
 
     for sample_idx, each_sample in enumerate(train_data['multi_spk_wav_list']):
         for each_spk in train_data['batch_order'][sample_idx]:
+        # for each_spk in list(each_sample.keys()):
+            print(each_spk)
             this_spk = each_spk
             wav_genTrue = each_sample[this_spk]
             # min_len = 39936
