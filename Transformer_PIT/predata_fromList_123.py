@@ -50,6 +50,13 @@ def get_energy_order(multi_spk_fea_list):
         order.append(dd)
     return order
 
+def get_real_img(complex_maps):
+    siz=complex_maps.shape
+    maps_two_channel=np.zeros(list(siz)+[2])
+    maps_two_channel[:,:,:,0]=np.real(complex_maps)
+    maps_two_channel[:,:,:,1]=np.imag(complex_maps)
+    return maps_two_channel
+
 def _collate_fn(mix_data,source_data,raw_tgt=None):
     """
     Args:
@@ -326,8 +333,10 @@ def prepare_data(mode, train_or_test, min=None, max=None):
 
                 mix_speechs[batch_idx, :] = wav_mix
                 mix_feas.append(feature_mix)
-                mix_phase.append(np.transpose(librosa.core.spectrum.stft(wav_mix, config.FRAME_LENGTH, config.FRAME_SHIFT, )))
-                mix_angle.append(np.angle(np.transpose(librosa.core.spectrum.stft(wav_mix, config.FRAME_LENGTH, config.FRAME_SHIFT, ))))
+                spectrum_mix=librosa.core.spectrum.stft(wav_mix, config.FRAME_LENGTH, config.FRAME_SHIFT, )
+                mix_phase.append(np.transpose(spectrum_mix))
+                mix_angle.append(np.angle(np.transpose(spectrum_mix)))
+
                 batch_idx += 1
                 # print('batch_dix:{}/{},'.format(batch_idx,config.batch_size),)
                 if batch_idx == config.batch_size:  # 填满了一个batch
@@ -366,6 +375,7 @@ def prepare_data(mode, train_or_test, min=None, max=None):
                         yield {'mix_wav': mix_speechs,
                                'mix_feas': mix_feas,
                                'mix_phase': mix_phase,
+                               'mix_complex_two_channel':get_real_img(mix_phase),
                                'mix_angle': mix_angle,
                                'aim_fea': aim_fea,
                                'aim_spkname': aim_spkname,
