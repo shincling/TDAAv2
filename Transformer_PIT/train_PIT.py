@@ -30,10 +30,11 @@ parser = argparse.ArgumentParser(description='train_WSJ0.py')
 parser.add_argument('-config', default='config_WSJ0.yaml', type=str,
                     help="config file")
 # parser.add_argument('-gpus', default=range(4), nargs='+', type=int,
-parser.add_argument('-gpus', default=[2,3], nargs='+', type=int,
+parser.add_argument('-gpus', default=[2,3,0,1], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
 # parser.add_argument('-restore', default='TDAAv3_PIT_30001.pt', type=str,
-parser.add_argument('-restore', default='Transformer_PIT_54001.pt', type=str,
+# parser.add_argument('-restore', default='Transformer_PIT_54001.pt', type=str,
+parser.add_argument('-restore', default='/data1/shijing_data/2020-02-14-04:58:17//Transformer_PIT_11001.pt', type=str,
 # parser.add_argument('-restore', default='data/data/log/2020-02-07-05:01:34/Transformer_PIT_58001.pt', type=str,
 # parser.add_argument('-restore', default=None, type=str,
                     help="restore checkpoint")
@@ -43,7 +44,7 @@ parser.add_argument('-model', default='seq2seq', type=str,
                     help="Model selection")
 parser.add_argument('-score', default='', type=str,
                     help="score_fn")
-parser.add_argument('-notrain', default=1, type=bool,
+parser.add_argument('-notrain', default=0, type=bool,
                     help="train or not")
 parser.add_argument('-log', default='', type=str,
                     help="log directory")
@@ -58,6 +59,27 @@ parser.add_argument('-label_dict_file', default='./data/data/rcv1.json', type=st
 opt = parser.parse_args()
 config = utils.read_config(opt.config)
 torch.manual_seed(opt.seed)
+
+def average_model_pytorch(ifiles, ofile):
+    import collections
+    import torch
+    omodel = collections.OrderedDict()
+    device = torch.device('cpu')
+
+    for ifile in ifiles:
+        # checkpoint = torch.load(ifile, map_location=device)
+        checkpoint = torch.load(ifile,map_location={'cuda:4':'cuda:0'})
+        state_dict =  checkpoint['model']
+        for i, (key, value) in enumerate(state_dict.items()):
+            if key not in omodel:
+                omodel[key] = value
+            else:
+                omodel[key] += value
+    for key in omodel.keys():
+        omodel[key] = omodel[key] / len(ifiles)
+
+    return omodel
+
 
 # checkpoint
 if opt.restore:
@@ -107,7 +129,23 @@ if config.use_center_loss:
     print(('Here we use center loss:',center_loss))
 
 if opt.restore:
-    model.load_state_dict(checkpoints['model'])
+    if 0: #given some checkpoints to do model averaging
+        checkpoints_list=['/data1/shijing_data/2020-02-14-04:58:17//Transformer_PIT_9001.pt',
+              '/data1/shijing_data/2020-02-14-04:58:17//Transformer_PIT_10001.pt',
+              '/data1/shijing_data/2020-02-14-04:58:17//Transformer_PIT_11001.pt',
+              # '/data1/shijing_data/2020-02-14-04:58:17//Transformer_PIT_15001.pt',
+              # '/data1/shijing_data/2020-02-14-04:58:17//Transformer_PIT_14001.pt',
+              ]
+        checkpoints_list=['/data1/shijing_data/2020-02-14-05:43:10/Transformer_PIT_60001.pt',
+                          '/data1/shijing_data/2020-02-14-05:43:10/Transformer_PIT_59001.pt',
+                          '/data1/shijing_data/2020-02-14-05:43:10/Transformer_PIT_58001.pt',
+                          '/data1/shijing_data/2020-02-14-05:43:10/Transformer_PIT_57001.pt',
+                          ]
+        print('Average over list:',checkpoints_list)
+        averge_model=average_model_pytorch(checkpoints_list,None)
+        model.load_state_dict(averge_model)
+    else:
+        model.load_state_dict(checkpoints['model'])
 if use_cuda:
     model.cuda()
 if len(opt.gpus) > 1:
@@ -216,8 +254,7 @@ def train(epoch):
         model.current_epoch = epoch
 
 
-    # train_data_gen = prepare_data('once', 'train')
-    train_data_gen = prepare_data('once', 'valid')
+    train_data_gen = prepare_data('once', 'train')
     while True:
         if updates <= config.warmup:  # 如果在warm就开始warmup
             tmp_lr =  config.learning_rate * min(max(updates,1)** (-0.5),
@@ -422,22 +459,10 @@ def train(epoch):
 
         if 0 and updates % config.eval_interval == 0 and epoch > 3: #建议至少跑几个epoch再进行测试，否则模型还没学到东西，会有很多问题。
             logging("time: %6.3f, epoch: %3d, updates: %8d, train loss: %6.5f\n"
-                    % (time.time() - start_time, epoch, updates, total_loss / report_total))
+                    % (time.time() - start_time, epoch, updates, total_loss/config.eval_interval))
             print(('evaluating after %d updates...\r' % updates))
-            original_bs=config.batch_size
-            score = eval(epoch) # eval的时候batch_size会变成1
-            # print 'Orignal bs:',original_bs
-            config.batch_size=original_bs
-            # print 'Now bs:',config.batch_size
-            for metric in config.metric:
-                scores[metric].append(score[metric])
-                lera.log({
-                    'sgm_micro_f1': score[metric],
-                })
-                if metric == 'micro_f1' and score[metric] >= max(scores[metric]):
-                    save_model(log_path + 'best_' + metric + '_checkpoint.pt')
-                if metric == 'hamming_loss' and score[metric] <= min(scores[metric]):
-                    save_model(log_path + 'best_' + metric + '_checkpoint.pt')
+            eval(epoch,'valid') # eval的时候batch_size会变成1
+            eval(epoch,'test') # eval的时候batch_size会变成1
 
             model.train()
             total_loss = 0
@@ -449,15 +474,13 @@ def train(epoch):
             save_model(log_path + 'Transformer_PIT_{}.pt'.format(updates))
 
 
-def eval(epoch):
+def eval(epoch,test_or_valid='valid'):
     # config.batch_size=1
+    global updates,model
     model.eval()
     # print '\n\n测试的时候请设置config里的batch_size为1！！！please set the batch_size as 1'
     reference, candidate, source, alignments = [], [], [], []
     e = epoch
-    test_or_valid = 'test'
-    # test_or_valid = 'valid'
-    # test_or_valid = 'train'
     print(('Test or valid:', test_or_valid))
     eval_data_gen = prepare_data('once', test_or_valid, config.MIN_MIX, config.MAX_MIX)
     SDR_SUM = np.array([])
@@ -566,10 +589,23 @@ def eval(epoch):
         lera.log({
             'ss_loss_' + test_or_valid: ss_loss.cpu().item(),
         })
+        writer.add_scalars('scalar/loss',{'ss_loss_'+test_or_valid:ss_loss.cpu().item()},updates+batch_idx)
         del ss_loss
+        if batch_idx>10:
+            break
 
+        if False: #this part is to test the checkpoints sequencially.
+            batch_idx += 1
+            if batch_idx%100==0:
+                updates=updates+1000
+                opt.restore='/data1/shijing_data/2020-02-14-04:58:17/Transformer_PIT_{}.pt'.format(updates)
+                print('loading checkpoint...\n', opt.restore)
+                checkpoints = torch.load(opt.restore)
+                model.module.load_state_dict(checkpoints['model'])
+                break
+            continue
         # '''''
-        if 1 and batch_idx <= (500 / config.batch_size):  # only the former batches counts the SDR
+        if 0 and batch_idx <= (500 / config.batch_size):  # only the former batches counts the SDR
             predicted_maps = predicted_masks * x_input_map_multi
             predicted_maps = predicted_maps.view(-1,mix_speech_len,speech_fre)
             # predicted_maps=Variable(feas_tgt)
@@ -608,16 +644,6 @@ def eval(epoch):
         print(('hamming_loss: %.8f | micro_f1: %.4f |recall: %.4f | precision: %.4f'
                    % (result['hamming_loss'], result['micro_f1'], result['micro_recall'], result['micro_precision'], )))
 
-    score = {}
-    result = utils.eval_metrics(reference, candidate, dict_spk2idx, log_path)
-    logging_csv([e, updates, result['hamming_loss'], \
-                 result['micro_f1'], result['micro_precision'], result['micro_recall'],SDR_SUM.mean()])
-    print(('hamming_loss: %.8f | micro_f1: %.4f'
-          % (result['hamming_loss'], result['micro_f1'])))
-    score['hamming_loss'] = result['hamming_loss']
-    score['micro_f1'] = result['micro_f1']
-    1/0
-    return score
 
 
 # Convert `idx` to labels. If index `stop` is reached, convert it and return.

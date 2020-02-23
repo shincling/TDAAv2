@@ -22,7 +22,10 @@ class seq2seq(nn.Module):
             src_embedding = None
             tgt_embedding = None
         # self.encoder = models.rnn_encoder(config, input_emb_size, None, embedding=src_embedding)
-        self.encoder = models.TransEncoder(config, input_emb_size)
+        if config.is_two_channel:
+            self.encoder = models.TransEncoder(config, 2 * input_emb_size)
+        else:
+            self.encoder = models.TransEncoder(config, input_emb_size)
         self.decoder = models.TransDecoder(config, sos_id=0, eos_id=tgt_vocab_size-1, n_tgt_vocab=tgt_vocab_size)
         # if config.shared_vocab == False:
         #     self.decoder = models.rnn_decoder(config, tgt_vocab_size, embedding=tgt_embedding, score_fn=score_fn)
@@ -39,7 +42,11 @@ class seq2seq(nn.Module):
 
         speech_fre = input_emb_size
         num_labels = tgt_vocab_size
-        self.separation_linear=nn.Linear(self.encoder.d_model,2*speech_fre)
+        if config.is_two_channel:
+            self.separation_linear_real = nn.Linear(self.encoder.d_model, 2 * speech_fre)
+            self.separation_linear_imag = nn.Linear(self.encoder.d_model, 2 * speech_fre)
+        else:
+            self.separation_linear=nn.Linear(self.encoder.d_model,2*speech_fre)
         self.speech_fre=speech_fre
 
         # if config.use_tas:
@@ -47,6 +54,11 @@ class seq2seq(nn.Module):
         # else:
         #     self.ss_model = models.SS_att(config, speech_fre, mix_speech_len, num_labels)
         #     self.ss_model = models.SS(config, speech_fre, mix_speech_len, num_labels)
+
+    def uncompress(self,x):
+        x = torch.clamp(x, -9.999, 9.999)
+        x = -10.0 * torch.log((10.0 - x) / (10.0 + x))
+        return x
 
     def compute_loss(self, hidden_outputs, targets, memory_efficiency):
         if 1:
@@ -80,6 +92,19 @@ class seq2seq(nn.Module):
         # todo: 这里只要一用排序，tgt那个就出问题，现在的长度都一样，所以没有排序也可以工作，这个得好好研究一下后面
         # src = torch.index_select(src, dim=0, index=indices)
         # tgt = torch.index_select(tgt, dim=0, index=indices)
+
+        if self.config.is_two_channel:
+            src = src.transpose(0, 1) #BS,T,F,2
+            tgt = tgt.transpose(0, 1) # convert to bs, output_len
+            src = src.view(src.shape[0],src.shape[1],-1) # bs,T,F*2
+            contexts, enc_attn_list = self.encoder(src, lengths.data.tolist(), return_attns=True)  # context是：（batch_size,max_len,hidden_size×2方向）这么大
+            predicted_maps_real=self.separation_linear_real(contexts) #bs,T,F*2
+            predicted_maps_imag=self.separation_linear_imag(contexts) #bs,T,F*2
+            predicted_maps_real = predicted_maps_real.view(predicted_maps_real.size(0), predicted_maps_real.size(1),2,self.speech_fre) # bs,T,2,F
+            predicted_maps_imag = predicted_maps_imag.view(predicted_maps_imag.size(0), predicted_maps_imag.size(1),2,self.speech_fre) # bs,T,2,F
+            predicted_maps_real = self.uncompress(predicted_maps_real.transpose(1,2))
+            predicted_maps_imag = self.uncompress(predicted_maps_imag.transpose(1,2)) # bs,2(topk),T,F
+            return predicted_maps_real.transpose(0,1),predicted_maps_imag.transpose(0,1),enc_attn_list
 
         src = src.transpose(0, 1) #BS,T,F
         tgt = tgt.transpose(0, 1) # convert to bs, output_len

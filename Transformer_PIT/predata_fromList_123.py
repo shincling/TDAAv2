@@ -52,7 +52,7 @@ def get_energy_order(multi_spk_fea_list):
 
 def get_real_img(complex_maps):
     siz=complex_maps.shape
-    maps_two_channel=np.zeros(list(siz)+[2])
+    maps_two_channel=np.zeros(list(siz)+[2],dtype=np.float32)
     maps_two_channel[:,:,:,0]=np.real(complex_maps)
     maps_two_channel[:,:,:,1]=np.imag(complex_maps)
     return maps_two_channel

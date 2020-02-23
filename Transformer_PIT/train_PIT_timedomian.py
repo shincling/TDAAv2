@@ -34,9 +34,7 @@ parser.add_argument('-gpus', default=[2,3,0,1], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
 # parser.add_argument('-restore', default='TDAAv3_PIT_30001.pt', type=str,
 # parser.add_argument('-restore', default='Transformer_PIT_54001.pt', type=str,
-parser.add_argument('-restore', default='/data1/shijing_data/2020-02-14-04:58:17//Transformer_PIT_11001.pt', type=str,
-# parser.add_argument('-restore', default='data/data/log/2020-02-07-05:01:34/Transformer_PIT_58001.pt', type=str,
-# parser.add_argument('-restore', default=None, type=str,
+parser.add_argument('-restore', default=None, type=str,
                     help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
                     help="Random seed")
@@ -122,6 +120,9 @@ print(('loading the global setting cost: %.3f' % (time.time() - start_time)))
 # model
 print('building model...\n')
 # 调了model.seq2seq 并且运行了最后这个括号里的五个参数的方法。(初始化了一个对象也就是）
+# model = getattr(models, opt.model)(config, speech_fre, mix_speech_len, num_labels, use_cuda, None, opt.score_fc)
+
+# two channel
 model = getattr(models, opt.model)(config, speech_fre, mix_speech_len, num_labels, use_cuda, None, opt.score_fc)
 
 if config.use_center_loss:
@@ -215,7 +216,7 @@ best_SDR = 0.0
 
 # train
 global_par_dict={
-    'title': str('Transformer PIT'),
+    'title': str('Transformer PIT 2CH '),
     'updates': updates,
     'batch_size': config.batch_size,
     'log path': str(log_path),
@@ -228,6 +229,7 @@ global_par_dict={
     'trans_d_model': config.trans_d_model,
     'trans_d_inner': config.trans_d_inner,
     'trans_dropout': config.trans_dropout,
+    '2channel':config.is_two_channel,
 }
 lera.log_hyperparams(global_par_dict)
 for item in list(global_par_dict.keys()):
@@ -276,11 +278,18 @@ def train(epoch):
             print(('SDRi_aver_epoch:', SDRi_SUM.mean()))
             break  # 如果这个epoch的生成器没有数据了，直接进入下一个epoch
 
-        src = Variable(torch.from_numpy(train_data['mix_feas']))
-        # raw_tgt = [spk.keys() for spk in train_data['multi_spk_fea_list']]
-        # raw_tgt = [sorted(spk.keys()) for spk in train_data['multi_spk_fea_list']]
+        src = Variable(torch.from_numpy(train_data['mix_complex_two_channel'])) # bs,T,F,2 both real and imag values
         raw_tgt=train_data['batch_order']
-        feas_tgt = models.rank_feas(raw_tgt, train_data['multi_spk_fea_list'])  # 这里是目标的图谱,bs*Topk,len,fre
+        feas_tgt = models.rank_feas(raw_tgt, train_data['multi_spk_wav_list'])  # 这里是目标的图谱,bs*Topk,time_len
+
+        padded_mixture, mixture_lengths, padded_source = train_data['tas_zip']
+        padded_mixture=torch.from_numpy(padded_mixture).float()
+        mixture_lengths=torch.from_numpy(mixture_lengths)
+        padded_source=torch.from_numpy(padded_source).float()
+
+        padded_mixture = padded_mixture.cuda().transpose(0,1)
+        mixture_lengths = mixture_lengths.cuda()
+        padded_source = padded_source.cuda()
 
         # 要保证底下这几个都是longTensor(长整数）
         tgt_max_len = config.MAX_MIX + 2  # with bos and eos.
@@ -303,37 +312,31 @@ def train(epoch):
         if config.use_center_loss:
             center_loss.zero_grad()
 
-        # aim_list 就是找到有正经说话人的地方的标号
-        aim_list = (tgt[1:-1].transpose(0, 1).contiguous().view(-1) != dict_spk2idx['<EOS>']).nonzero().squeeze()
-        aim_list = aim_list.data.cpu().numpy()
-
-        multi_mask, enc_attn_list = model(src, src_len, tgt, tgt_len,
+        multi_mask_real,multi_mask_imag, enc_attn_list = model(src, src_len, tgt, tgt_len,
                                              dict_spk2idx)  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
-        print('mask size:', multi_mask.size()) # topk,bs,T,F
-        # print('mask:', multi_mask[0,0,:3:3]) # topk,bs,T,F
-        # writer.add_histogram('global gamma',gamma, updates)
+        multi_mask_real=multi_mask_real.transpose(0,1)
+        multi_mask_imag=multi_mask_imag.transpose(0,1)
+        src_real=src[:,:,:,0].transpose(0,1) # bs,T,F
+        src_imag=src[:,:,:,1].transpose(0,1) # bs,T,F
+        print('mask size for real/imag:', multi_mask_real.size()) # bs,topk,T,F, 已经压缩过了
+        print('mixture size for real/imag:', src_real.size()) # bs,T,F
 
+        predicted_maps0_real=multi_mask_real[:,0]*src_real - multi_mask_imag[:,0]*src_imag #bs,T,F
+        predicted_maps0_imag=multi_mask_real[:,0]*src_imag + multi_mask_imag[:,0]*src_real #bs,T,F
+        predicted_maps1_real=multi_mask_real[:,1]*src_real - multi_mask_imag[:,1]*src_imag #bs,T,F
+        predicted_maps1_imag=multi_mask_real[:,1]*src_imag + multi_mask_imag[:,1]*src_real #bs,T,F
 
-        src = src.transpose(0, 1)
-        # expand the raw mixed-features to topk_max channel.
-        siz = src.size()
-        assert len(siz) == 3
-        topk_max = config.MAX_MIX  # 最多可能的topk个数
-        x_input_map_multi = torch.unsqueeze(src, 1).expand(siz[0], topk_max, siz[1], siz[2]).contiguous()#.view(-1, siz[1], siz[2])
-        # x_input_map_multi = x_input_map_multi[aim_list]
-        # x_input_map_multi = x_input_map_multi.transpose(0, 1) #topk,bs,T,F
-        multi_mask = multi_mask.transpose(0, 1)
-        # if config.WFM:
-        #     feas_tgt = x_input_map_multi.data * WFM_mask
-
-        # 注意,bs是第二维
-        assert multi_mask.shape == x_input_map_multi.shape
-        assert multi_mask.size(0) == config.batch_size
-
-        if 1 and len(opt.gpus) > 1: #先ss获取Perm
-            ss_loss, best_pmt = model.module.separation_pit_loss(x_input_map_multi, multi_mask, feas_tgt)
+        stft_matrix_spk0=torch.cat((predicted_maps0_real.unsqueeze(-1),predicted_maps0_imag.unsqueeze(-1)),3).transpose(1,2) # bs,F,T,2
+        stft_matrix_spk1=torch.cat((predicted_maps1_real.unsqueeze(-1),predicted_maps1_imag.unsqueeze(-1)),3).transpose(1,2) # bs,F,T,2
+        wav_spk0 = models.istft_irfft(stft_matrix_spk0, length=config.MAX_LEN, hop_length=config.FRAME_SHIFT, win_length=config.FRAME_LENGTH, window='hann' )
+        wav_spk1 = models.istft_irfft(stft_matrix_spk1, length=config.MAX_LEN, hop_length=config.FRAME_SHIFT, win_length=config.FRAME_LENGTH, window='hann' )
+        predict_wav = torch.cat((wav_spk0.unsqueeze(1),wav_spk1.unsqueeze(1)),1) # bs,topk,time_len
+        if 1 and len(opt.gpus) > 1:
+            ss_loss, pmt_list, max_snr_idx, *__ = model.module.separation_tas_loss(padded_mixture,predict_wav, padded_source, mixture_lengths)
         else:
-            ss_loss, best_pmt = model.separation_pit_loss(x_input_map_multi, multi_mask, feas_tgt)
+            ss_loss, pmt_list, max_snr_idx, *__ = model.separation_tas_loss(padded_mixture,predict_wav, padded_source, mixture_lengths)
+
+        best_pmt = [list(pmt_list[int(mm)].data.cpu().numpy()) for mm in max_snr_idx]
         print('loss for SS,this batch:', ss_loss.cpu().item())
         print('best perms for this batch:', best_pmt)
         writer.add_scalars('scalar/loss',{'ss_loss':ss_loss.cpu().item()},updates)
@@ -347,22 +350,15 @@ def train(epoch):
         })
 
         if updates>3 and updates % config.eval_interval in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9,]:
-            assert multi_mask.shape==x_input_map_multi.shape
-            assert multi_mask.size(0)==config.batch_size
-            predicted_maps = (multi_mask * x_input_map_multi).view(siz[0]*topk_max,siz[1],siz[2])
-
-            # predicted_maps=Variable(feas_tgt)
-            # utils.bss_eval(config, predicted_maps, train_data['multi_spk_fea_list'], raw_tgt, train_data, dst=log_path+'batch_output/')
-            utils.bss_eval2(config, predicted_maps, train_data['multi_spk_fea_list'], raw_tgt, train_data, dst=log_path+'batch_output')
-            del predicted_maps, multi_mask, x_input_map_multi
-            sdr_aver_batch, sdri_aver_batch=  bss_test.cal(log_path+'batch_output/')
+            utils.bss_eval_tas(config,predict_wav, train_data['multi_spk_fea_list'], raw_tgt, train_data, dst=log_path+'batch_output')
+            sdr_aver_batch, snri_aver_batch=  bss_test.cal(log_path+'batch_output/')
             lera.log({'SDR sample': sdr_aver_batch})
-            lera.log({'SDRi sample': sdri_aver_batch})
-            writer.add_scalars('scalar/loss',{'SDR_sample':sdr_aver_batch,'SDRi_sample':sdri_aver_batch},updates)
+            lera.log({'SI-SNRi sample': snri_aver_batch})
+            writer.add_scalars('scalar/loss',{'SDR_sample':sdr_aver_batch,'SDRi_sample': snri_aver_batch},updates)
             SDR_SUM = np.append(SDR_SUM, sdr_aver_batch)
-            SDRi_SUM = np.append(SDRi_SUM, sdri_aver_batch)
+            SDRi_SUM = np.append(SDRi_SUM,snri_aver_batch)
             print(('SDR_aver_now:', SDR_SUM.mean()))
-            print(('SDRi_aver_now:', SDRi_SUM.mean()))
+            print(('SNRi_aver_now:', SDRi_SUM.mean()))
 
             # Heatmap here
             # n_layer个 (head*bs) x lq x dk
@@ -400,7 +396,7 @@ def train(epoch):
 
         # continue
 
-        if 1 and updates % config.eval_interval == 3 : #建议至少跑几个epoch再进行测试，否则模型还没学到东西，会有很多问题。
+        if 0 and updates % config.eval_interval == 3 : #建议至少跑几个epoch再进行测试，否则模型还没学到东西，会有很多问题。
             logging("time: %6.3f, epoch: %3d, updates: %8d, train loss: %6.5f\n"
                     % (time.time() - start_time, epoch, updates, total_loss/config.eval_interval))
             print(('evaluating after %d updates...\r' % updates))
@@ -414,7 +410,7 @@ def train(epoch):
             report_correct = 0
 
         if 1 and updates % config.save_interval == 1:
-            save_model(log_path + 'Transformer_PIT_{}.pt'.format(updates))
+            save_model(log_path + 'Transformer_PIT_2ch_{}.pt'.format(updates))
 
 
 def eval(epoch,test_or_valid='valid'):

@@ -77,7 +77,7 @@ relitu: 0
 ALPHA:  0.5
 quchong_alpha: 1
 
-
+output_normalization: 1
 # 设定最小混叠说话人数，Minimum number of mixed speakers for training
 MIN_MIX:  2
 # 设定最大混叠说话人数，Maximum number of mixed speakers for training
@@ -150,3 +150,5 @@ trans_d_model: 512
 trans_d_inner: 1024
 trans_dropout: 0.1
 trans_pe_maxlen: 5000
+
+is_two_channel: 1
