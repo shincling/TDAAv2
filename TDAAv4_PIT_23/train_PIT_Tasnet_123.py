@@ -30,13 +30,17 @@ parser = argparse.ArgumentParser(description='train_WSJ0.py')
 parser.add_argument('-config', default='config_WSJ0.yaml', type=str,
                     help="config file")
 # parser.add_argument('-gpus', default=range(4), nargs='+', type=int,
-parser.add_argument('-gpus', default=[3], nargs='+', type=int,
+parser.add_argument('-gpus', default=[2,3], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
 # parser.add_argument('-restore', default='../TDAAv4/data/data/log/2020-01-02-08:50:49/TDAAv3_144001.pt', type=str,
 #parser.add_argument('-restore', default='data/data/log/2020-01-15-08:55:56/TDAAv3_PIT_84001.pt', type=str,
 #parser.add_argument('-restore', default='data/data/log/2020-01-16-00:38:07/TDAAv3_PIT_84001.pt', type=str,
 # parser.add_argument('-restore', default='data/data/log/2020-01-16-23:07:10/TDAAv3_PIT_284001.pt', type=str,
-parser.add_argument('-restore', default='TDAA_23_38001.pt', type=str,
+# parser.add_argument('-restore', default='TDAA_23_142001.pt', type=str,
+# parser.add_argument('-restore', default='TDAAv3_PIT_234001.pt', type=str, # from the v1 2&3 end separtion mode
+# parser.add_argument('-restore', default='TDAAv3_PIT_328001.pt', type=str, # from the v1 2&3 end separtion mode
+parser.add_argument('-restore', default='TDAAv3_PIT_408001.pt', type=str, # from the v1 2&3 end separtion mode
+# parser.add_argument('-restore', default='data/data/log/2020-02-20-11:50:36/TDAAv3_PIT_420001.pt', type=str,
 # parser.add_argument('-restore', default=None, type=str,
                     help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
@@ -104,14 +108,11 @@ print('building model...\n')
 # 调了model.seq2seq 并且运行了最后这个括号里的五个参数的方法。(初始化了一个对象也就是）
 model = getattr(models, opt.model)(config, speech_fre, mix_speech_len, num_labels, use_cuda, None, opt.score_fc)
 
-if config.use_center_loss:
-    center_loss=models.CenterLoss(num_classes=num_labels,feat_dim=config.SPK_EMB_SIZE,use_gpu=True)
-    print(('Here we use center loss:',center_loss))
-
 if opt.restore:
     model.load_state_dict(checkpoints['model'])
-    # model.encoder.load_state_dict({dd.replace('encoder.',''): checkpoints['model'][dd] for dd in checkpoints['model'] if 'encoder' in dd})
-    # model.decoder.load_state_dict({dd.replace('decoder.',''): checkpoints['model'][dd] for dd in checkpoints['model'] if 'decoder' in dd})
+    # model.encoder.load_state_dict({dd.replace('encoder.',''): checkpoints['model'][dd] for dd in checkpoints['model'] if dd[:7]=='encoder'})
+    # model.decoder.load_state_dict({dd.replace('decoder.',''): checkpoints['model'][dd] for dd in checkpoints['model'] if dd[:7]=='decoder'})
+
 if use_cuda:
     model.cuda()
 if len(opt.gpus) > 1:
@@ -478,8 +479,7 @@ def eval(epoch):
     reference, candidate, source, alignments = [], [], [], []
     e = epoch
     test_or_valid = 'test'
-    test_or_valid = 'valid'
-    # test_or_valid = 'tran'
+    # test_or_valid = 'valid'
     print(('Test or valid:', test_or_valid))
     eval_data_gen = prepare_data('once', test_or_valid, config.MIN_MIX, config.MAX_MIX)
     SDR_SUM = np.array([])
@@ -535,14 +535,13 @@ def eval(epoch):
             if config.WFM:
                 WFM_mask = WFM_mask.cuda()
 
-        '''
         if 1 and len(opt.gpus) > 1:
             outputs, pred,targets, multi_mask, dec_enc_attn_list = model(src, src_len, tgt, tgt_len, dict_spk2idx, None,
                                                                     mix_wav=padded_mixture)  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
         else:
             outputs, pred,targets, multi_mask, dec_enc_attn_list = model(src, src_len, tgt, tgt_len, dict_spk2idx, None,
                                                                     mix_wav=padded_mixture)  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
-        samples=list(pred.max(2)[1].data.cpu().numpy())
+        samples=list(pred.view(config.batch_size,top_k+1,-1).max(2)[1].data.cpu().numpy())
         '''
 
         if 1 and len(opt.gpus) > 1:

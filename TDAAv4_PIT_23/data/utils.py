@@ -217,6 +217,9 @@ def bss_eval_tas(config, predict_wav, y_multi_map, y_map_gtruth, train_data, dst
         shutil.rmtree(dst)
     os.makedirs(dst)
 
+    def normalization_11(sig):
+        return sig/np.max(np.abs(sig))
+
     for sample_idx, each_sample in enumerate(train_data['multi_spk_wav_list']):
         for each_spk in list(each_sample.keys()):
             this_spk = each_spk
@@ -226,7 +229,11 @@ def bss_eval_tas(config, predict_wav, y_multi_map, y_map_gtruth, train_data, dst
             # print('Real wav:',wav_genTrue[16000:16005])
             if config.FRAME_SHIFT == 64:
                 min_len = len(wav_genTrue)
-            sf.write(dst + '/{}_{}_realTrue.wav'.format(sample_idx, this_spk), wav_genTrue[:min_len],
+                wav_genTrue=wav_genTrue[:min_len]
+            if config.output_normalization:
+                wav_genTrue=normalization_11(wav_genTrue)
+
+            sf.write(dst + '/{}_{}_realTrue.wav'.format(sample_idx, this_spk), wav_genTrue,
                      config.FRAME_RATE, )
 
     predict_multi_map_list = []
@@ -255,7 +262,10 @@ def bss_eval_tas(config, predict_wav, y_multi_map, y_map_gtruth, train_data, dst
             wav_pre = y_pre_map
             min_len = len(wav_pre)
             # print('Pre wav:',wav_pre[16000:16005])
-            sf.write(dst + '/{}_{}_pre.wav'.format(sample_idx, this_spk), wav_pre[:min_len], config.FRAME_RATE, )
+            wav_pre=wav_pre[:min_len]
+            if config.output_normalization:
+                wav_pre=normalization_11(wav_pre)
+            sf.write(dst + '/{}_{}_pre.wav'.format(sample_idx, this_spk),wav_pre, config.FRAME_RATE, )
 
             gen_true_spec = feas_tgt[this_spk] * np.exp(1j * phase_mix)
             wav_gen_True = librosa.core.spectrum.istft(np.transpose(gen_true_spec), config.FRAME_SHIFT)
