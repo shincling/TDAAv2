@@ -44,6 +44,8 @@ class seq2seq(nn.Module):
         else:
             # self.ss_model = models.SS_att(config, speech_fre, mix_speech_len, num_labels)
             self.ss_model = models.SS(config, speech_fre, mix_speech_len, num_labels)
+            if self.config.two_stage:
+                self.ss_model_2nd = models.SS(config, speech_fre, mix_speech_len, num_labels)
 
     def compute_loss(self, hidden_outputs, targets, memory_efficiency):
         if 1:
@@ -100,13 +102,15 @@ class seq2seq(nn.Module):
         tgt = tgt.transpose(0, 1) # convert to output_len(2+2), bs
         if 1:
             if self.config.use_tas:
-                predicted_maps = self.ss_model(mix_wav,query)
+                predicted_maps = self.ss_model(mix_wav,query) # bs,topk, T
+                if self.config.two_stage:
+                    predicted_maps_2nd = self.ss_model_2nd(mix_wav,predicted_maps) # bs,T   bs,topk,T
             else:
                 predicted_maps = self.ss_model(src_original, query, tgt[1:-1], dict_spk2idx)
         else:
             # dec_enc_attn_list:nhead,bs,topk(2+1),T
             predicted_maps = self.ss_model(src_original, dec_enc_attn_list[:,:,:2], tgt[1:-1], dict_spk2idx)
-        return outputs.transpose(0,1), pred, tgt[1:], predicted_maps.transpose(0, 1), dec_enc_attn_list[-1] #n_head*b,topk+1,T
+        return outputs.transpose(0,1), pred, tgt[1:], predicted_maps.transpose(0, 1), dec_enc_attn_list #n_head*b,topk+1,T
 
     def sample(self, src, src_len):
         # src=src.squeeze()
