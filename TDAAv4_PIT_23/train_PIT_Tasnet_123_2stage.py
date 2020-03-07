@@ -29,16 +29,9 @@ parser = argparse.ArgumentParser(description='train_WSJ0.py')
 
 parser.add_argument('-config', default='config_WSJ0.yaml', type=str,
                     help="config file")
-# parser.add_argument('-gpus', default=range(4), nargs='+', type=int,
-parser.add_argument('-gpus', default=[2,3], nargs='+', type=int,
+parser.add_argument('-gpus', default=range(4), nargs='+', type=int,
+# parser.add_argument('-gpus', default=[2,3], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
-# parser.add_argument('-restore', default='../TDAAv4/data/data/log/2020-01-02-08:50:49/TDAAv3_144001.pt', type=str,
-#parser.add_argument('-restore', default='data/data/log/2020-01-15-08:55:56/TDAAv3_PIT_84001.pt', type=str,
-#parser.add_argument('-restore', default='data/data/log/2020-01-16-00:38:07/TDAAv3_PIT_84001.pt', type=str,
-# parser.add_argument('-restore', default='data/data/log/2020-01-16-23:07:10/TDAAv3_PIT_284001.pt', type=str,
-# parser.add_argument('-restore', default='TDAA_23_142001.pt', type=str,
-# parser.add_argument('-restore', default='TDAAv3_PIT_234001.pt', type=str, # from the v1 2&3 end separtion mode
-# parser.add_argument('-restore', default='TDAAv3_PIT_328001.pt', type=str, # from the v1 2&3 end separtion mode
 parser.add_argument('-restore', default='TDAAv3_PIT_408001.pt', type=str, # from the v1 2&3 end separtion mode
 # parser.add_argument('-restore', default='data/data/log/2020-02-20-11:50:36/TDAAv3_PIT_420001.pt', type=str,
 # parser.add_argument('-restore', default=None, type=str,
@@ -49,7 +42,7 @@ parser.add_argument('-model', default='seq2seq', type=str,
                     help="Model selection")
 parser.add_argument('-score', default='', type=str,
                     help="score_fn")
-parser.add_argument('-notrain', default=1, type=bool,
+parser.add_argument('-notrain', default=0, type=bool,
                     help="train or not")
 parser.add_argument('-log', default='', type=str,
                     help="log directory")
@@ -109,9 +102,10 @@ print('building model...\n')
 model = getattr(models, opt.model)(config, speech_fre, mix_speech_len, num_labels, use_cuda, None, opt.score_fc)
 
 if opt.restore:
-    model.load_state_dict(checkpoints['model'])
-    # model.encoder.load_state_dict({dd.replace('encoder.',''): checkpoints['model'][dd] for dd in checkpoints['model'] if dd[:7]=='encoder'})
-    # model.decoder.load_state_dict({dd.replace('decoder.',''): checkpoints['model'][dd] for dd in checkpoints['model'] if dd[:7]=='decoder'})
+    # model.load_state_dict(checkpoints['model'])
+    model.encoder.load_state_dict({dd.replace('encoder.',''): checkpoints['model'][dd] for dd in checkpoints['model'] if dd[:7]=='encoder'})
+    model.decoder.load_state_dict({dd.replace('decoder.',''): checkpoints['model'][dd] for dd in checkpoints['model'] if dd[:7]=='decoder'})
+    model.ss_model.load_state_dict({dd.replace('ss_model.',''): checkpoints['model'][dd] for dd in checkpoints['model'] if dd[:8]=='ss_model'})
 
 if use_cuda:
     model.cuda()
@@ -125,10 +119,7 @@ else:
     optim = Optim(config.optim, config.learning_rate, config.max_grad_norm,
                   lr_decay=config.learning_rate_decay, start_decay_at=config.start_decay_at)
 
-if config.use_center_loss:
-    optim.set_parameters(list(model.parameters())+list(center_loss.parameters()))
-else:
-    optim.set_parameters(list(model.parameters()))
+optim.set_parameters(list(model.module.second_ss_model.parameters()))
 
 if config.schedule:
     # scheduler = L.CosineAnnealingLR(optim.optimizer, T_max=config.epoch)
@@ -326,44 +317,36 @@ def train(epoch):
             feas_tgt = feas_tgt.cuda()
 
         model.zero_grad()
-        if config.use_center_loss:
-            center_loss.zero_grad()
 
         # aim_list 就是找到有正经说话人的地方的标号
         aim_list = (tgt[1:-1].transpose(0, 1).contiguous().view(-1) != dict_spk2idx['<EOS>']).nonzero().squeeze()
         aim_list = aim_list.data.cpu().numpy()
 
-        outputs, pred, targets, multi_mask, dec_enc_attn_list = model(src, src_len, tgt, tgt_len, dict_spk2idx, None, mix_wav=padded_mixture)  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
-        print('mask size:', multi_mask.size())
+        outputs, pred, targets, multi_mask, dec_enc_attn_list, multi_mask_2nd = model(src, src_len, tgt, tgt_len, dict_spk2idx, None, mix_wav=padded_mixture)  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
+        print('mask size 1 stage:', multi_mask.size())
+        print('mask size 2 stage:', multi_mask_2nd.size())
+        multi_mask = multi_mask.transpose(0,1)
+        multi_mask_2nd = multi_mask_2nd.transpose(0,1)
         # writer.add_histogram('global gamma',gamma, updates)
-
-
-        src = src.transpose(0, 1)
-        # expand the raw mixed-features to topk_max channel.
-        siz = src.size()
-        assert len(siz) == 3
-        topk_max = topk_this_batch  # 最多可能的topk个数
-        x_input_map_multi = torch.unsqueeze(src, 1).expand(siz[0], topk_max, siz[1], siz[2]).contiguous()#.view(-1, siz[1], siz[2])
-        # x_input_map_multi = x_input_map_multi[aim_list]
-        multi_mask = multi_mask.transpose(0, 1)
-        # if config.WFM:
-        #     feas_tgt = x_input_map_multi.data * WFM_mask
 
         if config.use_tas:
             if 1 and len(opt.gpus) > 1:
-                ss_loss, pmt_list, max_snr_idx,*__ = model.module.separation_tas_loss(padded_mixture, multi_mask,padded_source,mixture_lengths)
+                ss_loss_1st, pmt_list, max_snr_idx,*__ = model.module.separation_tas_loss(padded_mixture, multi_mask,padded_source,mixture_lengths)
             else:
-                ss_loss, pmt_list, max_snr_idx, *__= model.separation_tas_loss(padded_mixture, multi_mask, padded_source,mixture_lengths)
+                ss_loss_1st, pmt_list, max_snr_idx, *__= model.separation_tas_loss(padded_mixture, multi_mask, padded_source,mixture_lengths)
             best_pmt=[list(pmt_list[int(mm)].data.cpu().numpy()) for mm in max_snr_idx]
-        else:
-            if 1 and len(opt.gpus) > 1:  # 先ss获取Perm
-                ss_loss, best_pmt = model.module.separation_pit_loss(x_input_map_multi, multi_mask, feas_tgt)
-            else:
-                ss_loss, best_pmt = model.separation_pit_loss(x_input_map_multi, multi_mask, feas_tgt)
+            print('loss for SS stage1,this batch:', ss_loss_1st.cpu().item())
+            print('best perms for this batch:', best_pmt)
+            writer.add_scalars('scalar/loss',{'ss_loss_2nd':ss_loss_1st.cpu().item()},updates)
 
-        print('loss for SS,this batch:', ss_loss.cpu().item())
-        print('best perms for this batch:', best_pmt)
-        writer.add_scalars('scalar/loss',{'ss_loss':ss_loss.cpu().item()},updates)
+            if 1 and len(opt.gpus) > 1:
+                ss_loss, pmt_list, max_snr_idx,*__ = model.module.separation_tas_loss(padded_mixture, multi_mask_2nd,padded_source,mixture_lengths)
+            else:
+                ss_loss, pmt_list, max_snr_idx, *__= model.separation_tas_loss(padded_mixture, multi_mask_2nd, padded_source,mixture_lengths)
+            best_pmt=[list(pmt_list[int(mm)].data.cpu().numpy()) for mm in max_snr_idx]
+            print('loss for SS stage2,this batch:', ss_loss.cpu().item())
+            print('best perms for this batch:', best_pmt)
+            writer.add_scalars('scalar/loss',{'ss_loss_2nd':ss_loss.cpu().item()},updates)
 
         # 按照Best_perm重新排列spk的预测目标
         targets=targets.transpose(0,1) #bs,aim+1(EOS也在）
@@ -381,11 +364,6 @@ def train(epoch):
             sgm_loss, num_total, num_correct = model.compute_loss(outputs, targets, opt.memory)
         print(('loss for SGM,this batch:', sgm_loss.cpu().item()))
         writer.add_scalars('scalar/loss',{'sgm_loss':sgm_loss.cpu().item()},updates)
-        if config.use_center_loss:
-            cen_alpha=0.01
-            cen_loss = center_loss(outputs.view(-1,config.SPK_EMB_SIZE), targets.view(-1))
-            print(('loss for SGM center loss,this batch:',cen_loss.cpu().item()))
-            writer.add_scalars('scalar/loss',{'center_loss':cen_loss.cpu().item()},updates)
 
         if not config.use_tas:
             loss = sgm_loss + 5 * ss_loss
@@ -394,32 +372,28 @@ def train(epoch):
 
         loss.backward()
 
-        if config.use_center_loss:
-            for c_param in center_loss.parameters():
-                c_param.grad.data *= (0.01/(cen_alpha*scheduler.get_lr()[0]))
         # print 'totallllllllllll loss:',loss
         total_loss_sgm += sgm_loss.cpu().item()
         total_loss_ss += ss_loss.cpu().item()
         lera.log({
             'sgm_loss': sgm_loss.cpu().item(),
-            'ss_loss': ss_loss.cpu().item(),
+            'ss_loss 1st': ss_loss_1st.cpu().item(),
+            'ss_loss 2st': ss_loss.cpu().item(),
             'loss:': loss.cpu().item(),
         })
 
         if updates>10 and updates % config.eval_interval in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]:
-            if not config.use_tas:
-                predicted_maps = multi_mask * x_input_map_multi.view(siz[0] * topk_max, siz[1], siz[2])
-                # predicted_maps=Variable(feas_tgt) # 这个是groundTruth
-                utils.bss_eval(config, predicted_maps, train_data['multi_spk_fea_list'], raw_tgt, train_data,
-                               dst='batch_output1')
-                del predicted_maps, multi_mask, x_input_map_multi
-                sdr_aver_batch, sdri_aver_batch = bss_test.cal('batch_output1/')
-            else:
-                utils.bss_eval_tas(config, multi_mask, train_data['multi_spk_fea_list'], raw_tgt, train_data, dst='batch_output1')
-                del x_input_map_multi
-                sdr_aver_batch, sdri_aver_batch = bss_test.cal('batch_output1/')
-            lera.log({'SDR sample': sdr_aver_batch})
-            lera.log({'SDRi sample': sdri_aver_batch})
+            if config.use_tas:
+                utils.bss_eval_tas(config, multi_mask, train_data['multi_spk_fea_list'], raw_tgt, train_data, dst=log_path+'batch_output1')
+                print('\n Stage 1:')
+                sdr_aver_batch, sdri_aver_batch = bss_test.cal(log_path+'batch_output1/')
+                lera.log({'SDR sample 1st': sdr_aver_batch})
+                lera.log({'SDRi sample 1st': sdri_aver_batch})
+                print('\n Stage 2:')
+                utils.bss_eval_tas(config, multi_mask_2nd, train_data['multi_spk_fea_list'], raw_tgt, train_data, dst=log_path+'batch_output1')
+                sdr_aver_batch, sdri_aver_batch = bss_test.cal(log_path+'batch_output1/')
+            lera.log({'SDR sample 2nd': sdr_aver_batch})
+            lera.log({'SDRi sample 2nd': sdri_aver_batch})
             writer.add_scalars('scalar/loss',{'SDR_sample':sdr_aver_batch,'SDRi_sample':sdri_aver_batch},updates)
             SDR_SUM = np.append(SDR_SUM, sdr_aver_batch)
             SDRi_SUM = np.append(SDRi_SUM, sdri_aver_batch)

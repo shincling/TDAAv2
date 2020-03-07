@@ -71,112 +71,6 @@ def remove_pad(inputs, inputs_lengths):
             results.append(input[:length].view(-1).cpu().numpy())
     return results
 
-class ConvTasNet(nn.Module):
-    def __init__(self, config, N=256, L=20, B=256, H=512, P=3, X=8, R=4, C=2, norm_type="gLN", causal=False,
-                 mask_nonlinear='relu'):
-        """
-        Args:
-            N: Number of filters in autoencoder
-            L: Length of the filters (in samples)
-            B: Number of channels in bottleneck 1 * 1-conv block
-            H: Number of channels in convolutional blocks
-            P: Kernel size in convolutional blocks
-            X: Number of convolutional blocks in each repeat
-            R: Number of repeats
-            C: Number of speakers
-            norm_type: BN, gLN, cLN
-            causal: causal or non-causal
-            mask_nonlinear: use which non-linear function to generate mask
-        """
-        super(ConvTasNet, self).__init__()
-        # Hyper-parameter
-        self.config = config
-        self.N, self.L, self.B, self.H, self.P, self.X, self.R, self.C = N, L, B, H, P, X, R, C
-        self.norm_type = norm_type
-        self.causal = causal
-        self.mask_nonlinear = mask_nonlinear
-        # Components
-        self.encoder = Encoder(L, N)
-        self.separator = TemporalConvNet(config, N, B, H, P, X, R, C, norm_type, causal, mask_nonlinear)
-        self.decoder = Decoder(N, L)
-        # init
-        for p in self.parameters():
-            if p.dim() > 1:
-                nn.init.xavier_normal_(p)
-
-    def forward(self, mixture, hidden_outputs):
-        """
-        Args:
-            mixture: [M, T], M is batch size, T is #samples
-        Returns:
-            est_source: [M, C, T]
-        """
-        mixture_w = self.encoder(mixture)
-        est_mask = self.separator(mixture_w, hidden_outputs)
-        est_source = self.decoder(mixture_w, est_mask)
-
-        # T changed after conv1d in encoder, fix it here
-        T_origin = mixture.size(-1)
-        T_conv = est_source.size(-1)
-        est_source = F.pad(est_source, (0, T_origin - T_conv))
-        return est_source
-
-    @classmethod
-    def load_model(cls, path):
-        # Load to CPU
-        package = torch.load(path, map_location=lambda storage, loc: storage)
-        model = cls.load_model_from_package(package)
-        return model
-
-    @classmethod
-    def load_model_from_package(cls, package):
-        model = cls(package['N'], package['L'], package['B'], package['H'],
-                    package['P'], package['X'], package['R'], package['C'],
-                    norm_type=package['norm_type'], causal=package['causal'],
-                    mask_nonlinear=package['mask_nonlinear'])
-        model.load_state_dict(package['state_dict'])
-        return model
-
-    @staticmethod
-    def serialize(model, optimizer, epoch, tr_loss=None, cv_loss=None):
-        package = {
-            # hyper-parameter
-            'N': model.N, 'L': model.L, 'B': model.B, 'H': model.H,
-            'P': model.P, 'X': model.X, 'R': model.R, 'C': model.C,
-            'norm_type': model.norm_type, 'causal': model.causal,
-            'mask_nonlinear': model.mask_nonlinear,
-            # state
-            'state_dict': model.state_dict(),
-            'optim_dict': optimizer.state_dict(),
-            'epoch': epoch
-        }
-        if tr_loss is not None:
-            package['tr_loss'] = tr_loss
-            package['cv_loss'] = cv_loss
-        return package
-
-
-class Encoder(nn.Module):
-    """Estimation of the nonnegative mixture weight by a 1-D conv layer.
-    """
-    def __init__(self, L, N):
-        super(Encoder, self).__init__()
-        # Hyper-parameter
-        self.L, self.N = L, N
-        # Components
-        # 50% overlap
-        self.conv1d_U = nn.Conv1d(1, N, kernel_size=L, stride=L // 2, bias=False)
-
-    def forward(self, mixture):
-        """
-        Args:
-            mixture: [M, T], M is batch size, T is #samples
-        Returns:
-            mixture_w: [M, N, K], where K = (T-L)/(L/2)+1 = 2T/L-1
-        """
-        mixture = torch.unsqueeze(mixture, 1)  # [M, 1, T]
-        mixture_w = F.relu(self.conv1d_U(mixture))  # [M, N, K]
-        return mixture_w
 
 class ConvTasNet_2nd(nn.Module):
     def __init__(self, config, N=256, L=20, B=256, H=512, P=3, X=8, R=4, C=2, norm_type="gLN", causal=False,
@@ -195,7 +89,7 @@ class ConvTasNet_2nd(nn.Module):
             causal: causal or non-causal
             mask_nonlinear: use which non-linear function to generate mask
         """
-        super(ConvTasNet, self).__init__()
+        super(ConvTasNet_2nd, self).__init__()
         # Hyper-parameter
         self.config = config
         self.N, self.L, self.B, self.H, self.P, self.X, self.R, self.C = N, L, B, H, P, X, R, C
@@ -203,7 +97,7 @@ class ConvTasNet_2nd(nn.Module):
         self.causal = causal
         self.mask_nonlinear = mask_nonlinear
         # Components
-        self.encoder = Encoder(L, N)
+        self.encoder = Encoder_2nd(L, N)
         self.separator = TemporalConvNet(config, N, B, H, P, X, R, C, norm_type, causal, mask_nonlinear)
         self.decoder = Decoder(N, L)
         # init
@@ -215,11 +109,13 @@ class ConvTasNet_2nd(nn.Module):
         """
         Args:
             mixture: [M, T], M is batch size, T is #samples
+            first_stage_masks: [M, topk,T], M is batch size, T is #samples
         Returns:
-            est_source: [M, C, T]
+            est_source: [M, 1, T]
         """
-        mixture_w = self.encoder_2nd(mixture, first_stage_masks)
-        est_mask = self.separator(mixture_w)
+        M,C=first_stage_masks.shape[:2]
+        mixture_w = self.encoder(mixture, first_stage_masks) # M*topk,N,T
+        est_mask = self.separator(mixture_w,C)
         est_source = self.decoder(mixture_w, est_mask)
 
         # T changed after conv1d in encoder, fix it here
@@ -266,7 +162,7 @@ class Encoder_2nd(nn.Module):
     """Estimation of the nonnegative mixture weight by a 1-D conv layer.
     """
     def __init__(self, L, N):
-        super(Encoder, self).__init__()
+        super(Encoder_2nd, self).__init__()
         # Hyper-parameter
         self.L, self.N = L, N
         # Components
@@ -279,9 +175,9 @@ class Encoder_2nd(nn.Module):
             mixture: [M, T], M is batch size, T is #samples
             first_stage_masks: [M, topk,T], M is batch size, T is #samples
         Returns:
-            mixture_w: [M, N, K], where K = (T-L)/(L/2)+1 = 2T/L-1
+            mixture_w: [M*topK, N, K], where K = (T-L)/(L/2)+1 = 2T/L-1
         """
-        topk, T_length = first_stage_masks.shape(-2:)
+        topk, T_length = first_stage_masks.shape[-2:]
         mixture = torch.unsqueeze(mixture, 1).expand(-1,topk,-1).view(-1,1,T_length)  # [M*topk,1 T]
         first_stage_masks =  first_stage_masks.view(-1,1,T_length) # M*topk,1,T
         mixture = torch.cat([mixture,first_stage_masks],1) # M*topk,2,T
@@ -299,13 +195,14 @@ class Decoder(nn.Module):
     def forward(self, mixture_w, est_mask):
         """
         Args:
-            mixture_w: [M, N, K]
+            mixture_w: [M*C, N, K]
             est_mask: [M, C, N, K]
         Returns:
             est_source: [M, C, T]
         """
         # D = W * M
-        source_w = torch.unsqueeze(mixture_w, 1) * est_mask  # [M, C, N, K]
+        M,C,N,K=est_mask.shape
+        source_w = mixture_w.view(M,C,N,K) * est_mask  # [M, C, N, K]
         source_w = torch.transpose(source_w, 2, 3) # [M, C, K, N]
         # S = DV
         est_source = self.basis_signals(source_w)  # [M, C, K, L]
@@ -335,7 +232,7 @@ class TemporalConvNet(nn.Module):
         self.C = C
         self.B = B
         self.mask_nonlinear = mask_nonlinear
-        if config.end_separation_mode:
+        if True:
             # Components
             # [M, N, K] -> [M, N, K]
             layer_norm = ChannelwiseLayerNorm(N)
@@ -358,75 +255,15 @@ class TemporalConvNet(nn.Module):
             # [M, B, K] -> [M, C*N, K]
             # self.mask_conv1x1 = nn.Conv1d(B, C*N, 1, bias=False)
             # self.mask_conv1x1 = nn.Conv1d(B+256, N, 1, bias=False)
-            self.mask_conv1x1 = nn.Conv1d(512+256, N, 1, bias=False)
+            self.mask_conv1x1 = nn.Conv1d(B, N, 1, bias=False)
             # 这个２５６和config的SPK_EMB_SIZE需要保持一致
             # Put together
             self.network = nn.Sequential(layer_norm,
                                          bottleneck_conv1x1,
                                          temporal_conv_net,)
                                          # mask_conv1x1)
-        elif config.begin_separation_mode:
-            # Components
-            # [M*C, N+256, K] -> [M*C, N+256, K]
-            layer_norm = ChannelwiseLayerNorm(N+512)
-            # [M*C, N+256, K] -> [M*C, B, K]
-            bottleneck_conv1x1 = nn.Conv1d(N+512, B, 1, bias=False)
-            # [M*C, B, K] -> [M*C, B, K]
-            repeats = []
-            for r in range(R):
-                blocks = []
-                for x in range(X):
-                    dilation = 2**x
-                    padding = (P - 1) * dilation if causal else (P - 1) * dilation // 2
-                    blocks += [TemporalBlock(B, H, P, stride=1,
-                                             padding=padding,
-                                             dilation=dilation,
-                                             norm_type=norm_type,
-                                             causal=causal)]
-                repeats += [nn.Sequential(*blocks)]
-            temporal_conv_net = nn.Sequential(*repeats)
-            # [M*C, B, K] -> [M*C, N, K]
-            self.mask_conv1x1 = nn.Conv1d(B, N, 1, bias=False)
-            # Put together
-            self.network = nn.Sequential(layer_norm,
-                                         bottleneck_conv1x1,
-                                         temporal_conv_net,)
-        elif config.middle_separation_mode:
-            # Components
-            # [M, N, K] -> [M, N, K]
-            layer_norm = ChannelwiseLayerNorm(N)
-            self.layer_norm = layer_norm
-            # [M, N, K] -> [M, B, K]
-            bottleneck_conv1x1 = nn.Conv1d(N, B, 1, bias=False)
-            self.bottleneck_conv1x1=bottleneck_conv1x1
-            # [M, B, K] -> [M, B, K]
-            repeats = []
-            for r in range(R):
-                blocks = []
-                for x in range(X):
-                    dilation = 2**x
-                    padding = (P - 1) * dilation if causal else (P - 1) * dilation // 2
-                    blocks += [Conditional_TemporalBlock(config, B, H, P, stride=1,
-                                             padding=padding,
-                                             dilation=dilation,
-                                             norm_type=norm_type,
-                                             causal=causal)]
-                repeats += [nn.Sequential(*blocks)]
-            temporal_conv_net = nn.Sequential(*repeats)
-            self.temporal_conv_net = temporal_conv_net
 
-            # [M, B, K] -> [M, C*N, K]
-            # self.mask_conv1x1 = nn.Conv1d(B, C*N, 1, bias=False)
-            # self.mask_conv1x1 = nn.Conv1d(B+256, N, 1, bias=False)
-            self.mask_conv1x1 = nn.Conv1d(B, N, 1, bias=False)
-            # 这个２５６和config的SPK_EMB_SIZE需要保持一致
-            # Put together
-            self.network = nn.Sequential(layer_norm,
-                                         bottleneck_conv1x1,
-                                         temporal_conv_net,)
-            # mask_conv1x1)
-
-    def forward(self, mixture_w, hidden_outputs):
+    def forward(self, mixture_w, topk):
         """
         Keep this API same with TasNet
         Args:
@@ -437,32 +274,11 @@ class TemporalConvNet(nn.Module):
         """
         B = self.B
         M, N, K = mixture_w.size()
-        _, C, D = hidden_outputs.size()
-        assert M==_
-        self.C = C
-        if self.config.end_separation_mode: # end separation
-            original_sep= self.network(mixture_w).unsqueeze(1).expand(M,self.C,B,K)  # [M, N, K] -> [M, C, B, K]
-            hidden_outputs=hidden_outputs.unsqueeze(-1).expand(M, C, D, K)# [M,C,D,K]
-            original_sep=torch.cat((original_sep,hidden_outputs),dim=2).view(-1,B+D,K) #[M*C,(B+D),K]
+        if True: # end separation
+            original_sep= self.network(mixture_w)  # [M, N, K] -> [M, C, B, K]
             score = self.mask_conv1x1(original_sep) # -> [M*C,N, K]
 
-            score = score.view(M, self.C, N, K) # [M, C*N, K] -> [M, C, N, K]
-
-        elif self.config.begin_separation_mode: # begin separation
-            mixture_w = mixture_w.unsqueeze(1).expand(M, self.C, N, K)
-            hidden_outputs=hidden_outputs.unsqueeze(-1).expand(M, C, D, K)# [M,C,D,K]
-            mixture_w = torch.cat((mixture_w,hidden_outputs),dim=2).view(-1,N+D,K) #[M*C,(N+D),K]
-            original_sep = self.network(mixture_w) # [M*C, N ,K]
-            score = self.mask_conv1x1(original_sep) # -> [M*C,N, K]
-            score = score.view(M, self.C, N, K) # [M, C*N, K] -> [M, C, N, K]
-        elif self.config.middle_separation_mode: # middle separation
-            # mixture: [M, N, K] ,query: [M, C, K]
-            original_sep= self.layer_norm(mixture_w)
-            original_sep= self.bottleneck_conv1x1(original_sep).unsqueeze(1).expand(-1,self.C,-1,-1)
-            original_sep, query= self.temporal_conv_net([original_sep,hidden_outputs]) # -> [M, C, B, K], query:[M,C,K]
-            original_sep = original_sep.view(M*C,N,K)
-            score = self.mask_conv1x1(original_sep) # -> [M*C,N,K]
-            score = score.view(M, self.C, N, K) # [M, C*N, K] -> [M, C, N, K]
+            score = score.view(-1, topk, N, K) #  -> [M, C, N, K]
 
         if self.mask_nonlinear == 'softmax':
             est_mask = F.softmax(score, dim=1)
@@ -501,87 +317,6 @@ class TemporalBlock(nn.Module):
         return out + residual  # look like w/o F.relu is better than w/ F.relu
         # return F.relu(out + residual)
 
-class Conditional_TemporalBlock(nn.Module):
-    def __init__(self, config, in_channels, out_channels, kernel_size,
-                 stride, padding, dilation, norm_type="gLN", causal=False):
-        super(Conditional_TemporalBlock, self).__init__()
-        # [M, B, K] -> [M, H, K]
-        conv1x1 = nn.Conv1d(in_channels, out_channels, 1, bias=False)
-        prelu = nn.PReLU()
-        norm = chose_norm(norm_type, out_channels)
-        # Put together
-        if config.middle_separation_mode: #conditional 1-D conv block
-            # [M, H, K] -> [M, B, K]
-            dsconv = Conditional_DepthwiseSeparableConv(out_channels, in_channels, kernel_size,
-                                                        stride, padding, dilation, norm_type,
-                                                        causal)
-            self.net = nn.Sequential(conv1x1, prelu, norm)
-            self.dsconv=dsconv
-
-    def forward(self, xs):
-        """
-        Args:
-            x[0]: [M, topk, B, K]
-            query=x[1]: [M, topk, spk_emb]
-        Returns:
-            [M, B, K]
-        """
-        x = xs[0]
-        siz=x.size()
-        query = xs[1]
-        assert x.shape[:2]==query.shape[:2]
-        x = x.view(-1,x.shape[-2],x.shape[-1]) #[M * topk, B, K]
-
-        residual = x
-        out = self.net(x)
-        out = self.dsconv(out,query)
-        # TODO: when P = 3 here works fine, but when P = 2 maybe need to pad?
-        out = (out + residual).view(*siz) # back to original size: [M, topk, B, K]
-
-        return [out, query]  # look like w/o F.relu is better than w/ F.relu
-        # return F.relu(out + residual)
-
-class Conditional_DepthwiseSeparableConv(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size,
-                 stride, padding, dilation, norm_type="gLN", causal=False):
-        super(Conditional_DepthwiseSeparableConv, self).__init__()
-        # Use `groups` option to implement depthwise convolution
-        # [M, H, K] -> [M, H, K]
-        depthwise_conv = nn.Conv1d(in_channels, in_channels, kernel_size,
-                                   stride=stride, padding=padding,
-                                   dilation=dilation, groups=in_channels,
-                                   bias=False)
-        if causal:
-            chomp = Chomp1d(padding)
-        prelu = nn.PReLU()
-        norm = chose_norm(norm_type, in_channels)
-        # [M, H, K] -> [M, B, K]
-        pointwise_conv = nn.Conv1d(in_channels, out_channels, 1, bias=False)
-        # Put together
-        if causal:
-            self.depthwise_conv = depthwise_conv
-            self.net = nn.Sequential( chomp, prelu, norm, pointwise_conv)
-        else:
-            self.depthwise_conv = depthwise_conv
-            self.net = nn.Sequential( prelu, norm, pointwise_conv)
-
-        self.linear_a=nn.Linear(512,in_channels) # BS,H
-        self.linear_b=nn.Linear(512,in_channels) # BS,H
-
-    def forward(self, x, query):
-        """
-        Args:
-            x: [M*topk, H, K]
-            query: [M, topK, Spk_EMB]
-        Returns:
-            result: [M, B, K]
-        """
-        # Testef from the Wavesplit : End-to-End Speech Separation by Speaker Clustering
-        x = self.depthwise_conv(x) # keep the size --> M*topk,H,K
-        linear_query_a=self.linear_a(query.view(-1,query.shape[-1])).unsqueeze(-1) #M*topk,Spk_emb --> M*topk,H,1
-        linear_query_b=self.linear_b(query.view(-1,query.shape[-1])).unsqueeze(-1) #M*topk,Spk_emb --> M*topk,H,1
-        x = linear_query_a*x+linear_query_b
-        return self.net(x)
 
 class DepthwiseSeparableConv(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size,
