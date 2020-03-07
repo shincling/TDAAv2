@@ -1,6 +1,6 @@
 import torch.nn as nn
 import numpy as np
-
+import models
 from models.transformer_utils import(IGNORE_ID, get_attn_key_pad_mask, get_attn_pad_mask,
                    get_non_pad_mask, get_subsequent_mask, pad_list)
 
@@ -256,7 +256,7 @@ class TransDecoder(nn.Module):
             self, config, sos_id, eos_id,
             n_tgt_vocab, d_word_vec=512,
             n_layers=1, n_head=8, d_k=64, d_v=64,
-            d_model=512, d_inner=2048, dropout=0.1,
+            d_model=512, d_inner=2048, dropout=0.2,
             tgt_emb_prj_weight_sharing=False,
             pe_maxlen=5000):
         super(TransDecoder, self).__init__()
@@ -284,7 +284,11 @@ class TransDecoder(nn.Module):
             DecoderLayer(d_model, d_inner, n_head, d_k, d_v, dropout=dropout)
             for _ in range(n_layers)])
 
-        self.tgt_word_prj = nn.Linear(d_model, n_tgt_vocab, bias=False)
+
+        if config.infer_classifier=='arc_margin':
+            self.tgt_word_prj = models.ArcMarginProduct(d_model, n_tgt_vocab, s=30, m=0.5, easy_margin=False)
+        else:
+            self.tgt_word_prj = nn.Linear(d_model, n_tgt_vocab, bias=False)
         nn.init.xavier_normal_(self.tgt_word_prj.weight)
 
         if tgt_emb_prj_weight_sharing:
@@ -355,7 +359,10 @@ class TransDecoder(nn.Module):
 
         # before softmax
         # dec_output: bs,dec_len,512
-        seq_logit = self.tgt_word_prj(dec_output)
+        if self.config.infer_classifier=='arc_margin':
+            seq_logit, dec_output = self.tgt_word_prj(dec_output,ys_out_pad) # dec_output after normalization
+        else:
+            seq_logit = self.tgt_word_prj(dec_output)
 
         # Return
         pred, gold = seq_logit, ys_out_pad
@@ -365,7 +372,10 @@ class TransDecoder(nn.Module):
         return pred, gold, dec_output, dec_output_input
 
     def compute_score(self, hiddens,targets):
-        scores = self.tgt_word_prj(hiddens)
+        if self.config.infer_classifier=='arc_margin':
+            scores,__ = self.tgt_word_prj(hiddens,targets)
+        else:
+            scores = self.tgt_word_prj(hiddens)
         return scores
 
     def sample(self, input, init_state, contexts):

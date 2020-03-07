@@ -189,7 +189,7 @@ global_par_dict={
     'relitu': config.relitu,
     'ct_recu': config.ct_recu,  # 控制是否采用att递减的ct构成
     'loss':str(config.loss),
-    'score fnc': str(opt.score_fc),
+    'score fnc': str(config.infer_classifier),
 }
 lera.log_hyperparams(global_par_dict)
 for item in list(global_par_dict.keys()):
@@ -580,10 +580,10 @@ def eval(epoch):
         # '''''
         if 1 and batch_idx <= (500 / config.batch_size):  # only the former batches counts the SDR
             utils.bss_eval_tas(config, multi_mask, eval_data['multi_spk_fea_list'], raw_tgt, eval_data,
-                               dst='batch_output_test')
+                               dst=log_path+'batch_output/')
             del multi_mask, x_input_map_multi
             try:
-                sdr_aver_batch, sdri_aver_batch=  bss_test.cal('batch_output_test/')
+                sdr_aver_batch, sdri_aver_batch=  bss_test.cal(log_path+'batch_output/')
                 SDR_SUM = np.append(SDR_SUM, sdr_aver_batch)
                 SDRi_SUM = np.append(SDRi_SUM, sdri_aver_batch)
             except(AssertionError):
@@ -598,7 +598,33 @@ def eval(epoch):
             print(('Best SDR from {}---->{}'.format(best_SDR, SDR_SUM.mean())))
             best_SDR = SDR_SUM.mean()
             # save_model(log_path+'checkpoint_bestSDR{}.pt'.format(best_SDR))
+        '''
+        import matplotlib.pyplot as plt
+        ax = plt.gca()
+        ax.invert_yaxis()
 
+        raw_src=models.rank_feas(raw_tgt,eval_data['multi_spk_fea_list'])
+        att_idx=0
+        att =dec_enc_attn_list.data.cpu().numpy()[:,att_idx] # head,topk,T
+        for spk in range(3):
+            xx=att[:,spk]
+            plt.matshow(xx.reshape(8,1,-1).repeat(50,1).reshape(-1,751), cmap=plt.cm.hot, vmin=0,vmax=0.05)
+            plt.colorbar()
+            plt.savefig(log_path+'batch_output/'+'spk_{}.png'.format(spk))
+            plt.matshow(xx.sum(0).reshape(1, 1, -1).repeat(50, 1).reshape(-1, 751), cmap=plt.cm.hot, vmin=0, vmax=0.05)
+            plt.colorbar()
+            plt.savefig(log_path + 'batch_output/' + 'spk_sum_{}.png'.format(spk))
+        for head in range(8):
+            xx=att[head]
+            plt.matshow(xx.reshape(3,1,-1).repeat(100,1).reshape(-1,751), cmap=plt.cm.hot, vmin=0,vmax=0.05)
+            plt.colorbar()
+            plt.savefig(log_path+'batch_output/'+'head_{}.png'.format(head))
+        plt.matshow(raw_src[att_idx*2+0].transpose(0,1), cmap=plt.cm.hot, vmin=0,vmax=2)
+        plt.colorbar()
+        plt.savefig(log_path+'batch_output/'+'source0.png')
+        plt.matshow(raw_src[att_idx*2+1].transpose(0,1), cmap=plt.cm.hot, vmin=0,vmax=2)
+        plt.colorbar()
+        plt.savefig(log_path+'batch_output/'+'source1.png')
         # '''
         candidate += [convertToLabels(dict_idx2spk, s, dict_spk2idx['<EOS>']) for s in samples]
         # source += raw_src
@@ -652,6 +678,7 @@ def main():
     for i in range(1, config.epoch + 1):
         if not opt.notrain:
             train(i)
+            save_model(log_path + 'TDAAv3_PIT_tmp.pt')
         else:
             eval(i)
             # eval_recu(i)

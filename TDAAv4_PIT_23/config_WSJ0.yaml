@@ -2,12 +2,13 @@
 data:  './data/data/save_data'
 log:  './data/data/log/'
 epoch:  300 #epoch总数
-batch_size: 2
+batch_size: 4
 param_init:  0.1
 optim:  'adam'
 loss: 'focal_loss'
 use_center_loss: 0
 #loss: 'cross_entropy'
+infer_classifier: 'arc_margin'
 
 warmup: -1 # 设为-1就是原来的方式
 learning_rate:  0.0001 #如果不用warmup
@@ -60,6 +61,7 @@ SPK_EMB_SIZE : 512 #注意这个东西需要和上面的spk_emb（如果是globa
 end_separation_mode: 1
 middle_separation_mode: 0
 begin_separation_mode: 0
+two_stage: 1
 
 #global_emb:  0
 #SPK_EMB_SIZE : 512 #注意这个东西需要和上面的spk_emb（如果是global_emb的话）,否认则就跟decoder的hidden_size对应
@@ -84,7 +86,7 @@ quchong_alpha: 1
 # 设定最小混叠说话人数，Minimum number of mixed speakers for training
 MIN_MIX:  2
 # 设定最大混叠说话人数，Maximum number of mixed speakers for training
-MAX_MIX:  2
+MAX_MIX:  3
 # mode: 1 纯净语音刺激, 2 图片刺激, 3 视频刺激, 4 top-down概念刺激
 MODE:  1
 # 数据集

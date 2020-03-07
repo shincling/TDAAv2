@@ -34,8 +34,14 @@ class ArcMarginProduct(nn.Module):
         self.mm = math.sin(math.pi - m) * m
 
     def forward(self, input, label):
+        # input: bs,topk,emb  label:bs,topk
+        siz = input.shape
+        if len(siz)==3 and len(label.shape)==2:
+            input = input.view(-1,siz[2])
+            label = label.view(-1)
         # --------------------------- cos(theta) & phi(theta) ---------------------------
-        cosine = F.linear(F.normalize(input), F.normalize(self.weight))
+        normalized_input=F.normalize(input)
+        cosine = F.linear(normalized_input, F.normalize(self.weight))
         if label is None: #如果没给label，则是要测试阶段，直接输出cosine的就可以了
             return cosine
         sine = torch.sqrt((1.0 - torch.pow(cosine, 2)).clamp(0, 1))
@@ -53,7 +59,10 @@ class ArcMarginProduct(nn.Module):
         output *= self.s
         # print(output)
 
-        return output
+        if len(siz)==3:
+            return output.view(siz[0],siz[1],-1), normalized_input.view(*siz)
+        else:
+            return output, normalized_input
 
 
 class AddMarginProduct(nn.Module):
