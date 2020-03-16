@@ -98,6 +98,7 @@ class ConvTasNet(nn.Module):
         # Components
         self.encoder = Encoder(L, N)
         self.separator = TemporalConvNet(config, N, B, H, P, X, R, C, norm_type, causal, mask_nonlinear)
+        self.mask_conv1x1 = nn.Conv1d(B, N, 1, bias=False)
         self.decoder = Decoder(N, L)
         # init
         for p in self.parameters():
@@ -112,7 +113,12 @@ class ConvTasNet(nn.Module):
             est_source: [M, C, T]
         """
         mixture_w = self.encoder(mixture)
-        est_mask = self.separator(mixture_w, hidden_outputs)
+        est_mask= self.separator(mixture_w, hidden_outputs)
+        score = self.mask_conv1x1(est_mask)
+        if self.mask_nonlinear == 'softmax':
+            est_mask = F.softmax(score, dim=1)
+        elif self.mask_nonlinear == 'relu':
+            est_mask = F.relu(score)
         est_source = self.decoder(mixture_w, est_mask)
 
         # T changed after conv1d in encoder, fix it here
@@ -246,78 +252,15 @@ class TemporalConvNet(nn.Module):
                                              causal=causal)]
                 repeats += [nn.Sequential(*blocks)]
             temporal_conv_net = nn.Sequential(*repeats)
-            # [M, B, K] -> [M, C*N, K]
-            # self.mask_conv1x1 = nn.Conv1d(B, C*N, 1, bias=False)
-            # self.mask_conv1x1 = nn.Conv1d(B+256, N, 1, bias=False)
-            self.mask_conv1x1 = nn.Conv1d(512+256, N, 1, bias=False)
-            # 这个２５６和config的SPK_EMB_SIZE需要保持一致
+            # [M, B, K] -> [M, N, K]
+            self.mask_conv1x1 = nn.Conv1d(B, N, 1, bias=False)
             # Put together
             self.network = nn.Sequential(layer_norm,
                                          bottleneck_conv1x1,
                                          temporal_conv_net,)
                                          # mask_conv1x1)
-        elif config.begin_separation_mode:
-            # Components
-            # [M*C, N+256, K] -> [M*C, N+256, K]
-            layer_norm = ChannelwiseLayerNorm(N+512)
-            # [M*C, N+256, K] -> [M*C, B, K]
-            bottleneck_conv1x1 = nn.Conv1d(N+512, B, 1, bias=False)
-            # [M*C, B, K] -> [M*C, B, K]
-            repeats = []
-            for r in range(R):
-                blocks = []
-                for x in range(X):
-                    dilation = 2**x
-                    padding = (P - 1) * dilation if causal else (P - 1) * dilation // 2
-                    blocks += [TemporalBlock(B, H, P, stride=1,
-                                             padding=padding,
-                                             dilation=dilation,
-                                             norm_type=norm_type,
-                                             causal=causal)]
-                repeats += [nn.Sequential(*blocks)]
-            temporal_conv_net = nn.Sequential(*repeats)
-            # [M*C, B, K] -> [M*C, N, K]
-            self.mask_conv1x1 = nn.Conv1d(B, N, 1, bias=False)
-            # Put together
-            self.network = nn.Sequential(layer_norm,
-                                         bottleneck_conv1x1,
-                                         temporal_conv_net,)
-        elif config.middle_separation_mode:
-            # Components
-            # [M, N, K] -> [M, N, K]
-            layer_norm = ChannelwiseLayerNorm(N)
-            self.layer_norm = layer_norm
-            # [M, N, K] -> [M, B, K]
-            bottleneck_conv1x1 = nn.Conv1d(N, B, 1, bias=False)
-            self.bottleneck_conv1x1=bottleneck_conv1x1
-            # [M, B, K] -> [M, B, K]
-            repeats = []
-            for r in range(R):
-                blocks = []
-                for x in range(X):
-                    dilation = 2**x
-                    padding = (P - 1) * dilation if causal else (P - 1) * dilation // 2
-                    blocks += [Conditional_TemporalBlock(config, B, H, P, stride=1,
-                                             padding=padding,
-                                             dilation=dilation,
-                                             norm_type=norm_type,
-                                             causal=causal)]
-                repeats += [nn.Sequential(*blocks)]
-            temporal_conv_net = nn.Sequential(*repeats)
-            self.temporal_conv_net = temporal_conv_net
 
-            # [M, B, K] -> [M, C*N, K]
-            # self.mask_conv1x1 = nn.Conv1d(B, C*N, 1, bias=False)
-            # self.mask_conv1x1 = nn.Conv1d(B+256, N, 1, bias=False)
-            self.mask_conv1x1 = nn.Conv1d(B, N, 1, bias=False)
-            # 这个２５６和config的SPK_EMB_SIZE需要保持一致
-            # Put together
-            self.network = nn.Sequential(layer_norm,
-                                         bottleneck_conv1x1,
-                                         temporal_conv_net,)
-            # mask_conv1x1)
-
-    def forward(self, mixture_w, hidden_outputs):
+    def forward(self, mixture_w,):
         """
         Keep this API same with TasNet
         Args:
@@ -328,31 +271,10 @@ class TemporalConvNet(nn.Module):
         """
         B = self.B
         M, N, K = mixture_w.size()
-        _, C, D = hidden_outputs.size()
-        assert M==_
-        self.C = C
         if self.config.end_separation_mode: # end separation
-            original_sep= self.network(mixture_w).unsqueeze(1).expand(M,self.C,B,K)  # [M, N, K] -> [M, C, B, K]
-            hidden_outputs=hidden_outputs.unsqueeze(-1).expand(M, C, D, K)# [M,C,D,K]
-            original_sep=torch.cat((original_sep,hidden_outputs),dim=2).view(-1,B+D,K) #[M*C,(B+D),K]
-            score = self.mask_conv1x1(original_sep) # -> [M*C,N, K]
-
-            score = score.view(M, self.C, N, K) # [M, C*N, K] -> [M, C, N, K]
-
-        elif self.config.begin_separation_mode: # begin separation
-            mixture_w = mixture_w.unsqueeze(1).expand(M, self.C, N, K)
-            hidden_outputs=hidden_outputs.unsqueeze(-1).expand(M, C, D, K)# [M,C,D,K]
-            mixture_w = torch.cat((mixture_w,hidden_outputs),dim=2).view(-1,N+D,K) #[M*C,(N+D),K]
-            original_sep = self.network(mixture_w) # [M*C, N ,K]
-            score = self.mask_conv1x1(original_sep) # -> [M*C,N, K]
-            score = score.view(M, self.C, N, K) # [M, C*N, K] -> [M, C, N, K]
-        elif self.config.middle_separation_mode: # middle separation
-            # mixture: [M, N, K] ,query: [M, C, K]
-            original_sep= self.layer_norm(mixture_w)
-            original_sep= self.bottleneck_conv1x1(original_sep).unsqueeze(1).expand(-1,self.C,-1,-1)
-            original_sep, query= self.temporal_conv_net([original_sep,hidden_outputs]) # -> [M, C, B, K], query:[M,C,K]
-            original_sep = original_sep.view(M*C,N,K)
-            score = self.mask_conv1x1(original_sep) # -> [M*C,N,K]
+            original_sep= self.network(mixture_w)  # [M, N, K] -> [M, B, K]
+            return original_sep
+            score = self.mask_conv1x1(original_sep) # -> [M, N, K]
             score = score.view(M, self.C, N, K) # [M, C*N, K] -> [M, C, N, K]
 
         if self.mask_nonlinear == 'softmax':

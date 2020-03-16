@@ -21,14 +21,6 @@ class seq2seq(nn.Module):
         else:
             src_embedding = None
             tgt_embedding = None
-        # self.encoder = models.rnn_encoder(config, input_emb_size, None, embedding=src_embedding)
-        self.encoder = models.TransEncoder(config, input_emb_size)
-        self.decoder = models.TransDecoder(config, sos_id=0, eos_id=tgt_vocab_size-1, n_tgt_vocab=tgt_vocab_size)
-        # if config.shared_vocab == False:
-        #     self.decoder = models.rnn_decoder(config, tgt_vocab_size, embedding=tgt_embedding, score_fn=score_fn)
-        # else:
-        #     self.decoder = models.rnn_decoder(config, tgt_vocab_size, embedding=self.encoder.embedding,
-        #                                       score_fn=score_fn)
         self.use_cuda = use_cuda
         self.tgt_vocab_size = tgt_vocab_size
         self.config = config
@@ -41,6 +33,7 @@ class seq2seq(nn.Module):
         num_labels = tgt_vocab_size
         if config.use_tas:
             self.ss_model = models.ConvTasNet(config)
+            self.spk_lstm= nn.LSTMCell(self.ss_model.B+self.ss_model.N,self.ss_model.B) # LSTM over the speakers' step.
             if self.config.two_stage:
                 self.second_ss_model = models.ConvTasNet_2nd(config)
                 for p in self.encoder.parameters():
@@ -92,34 +85,67 @@ class seq2seq(nn.Module):
         tgt = tgt.transpose(0, 1) # convert to bs, output_len
         if mix_wav is not None:
             mix_wav=mix_wav.transpose(0,1)
-        contexts, *_ = self.encoder(src, lengths.data.tolist(),return_attns=True)  # context是：（batch_size,max_len,hidden_size×2方向）这么大
-        if self.config.PIT_training:
-            tgt_tmp=tgt.clone()
-            for ii in range(tgt.shape[1]-2): # topk个循环
-                tgt_tmp[:,ii+1]=ii+1
-            pred, gold, outputs,embs,dec_slf_attn_list, dec_enc_attn_list= self.decoder(tgt_tmp[:,1:-1], contexts, lengths.data.tolist(),return_attns=True)
-        else:
-            pred, gold, outputs,embs,dec_slf_attn_list, dec_enc_attn_list= self.decoder(tgt[:,1:-1], contexts, lengths.data.tolist())
 
-        if 0 and self.config.use_emb:
-            query=embs[:,1:]
-        else:
-            query=outputs[:,:-1]
-        del embs,dec_slf_attn_list
-        #outputs: bs,len+1(2+1),emb , embs是类似spk_emb的输入
         tgt = tgt.transpose(0, 1) # convert to output_len(2+2), bs
-        if 1:
-            if self.config.use_tas:
-                predicted_maps = self.ss_model(mix_wav,query) # bs,topk, T
-                if self.config.two_stage:
-                    predicted_maps_2nd = self.second_ss_model(mix_wav,predicted_maps) # bs,T   bs,topk,T -->
-                    return outputs.transpose(0, 1), pred, tgt[1:], predicted_maps.transpose(0, 1),\
-                           dec_enc_attn_list, predicted_maps_2nd.transpose( 0, 1)  # n_head*b,topk+1,T
+
+        #  mixture: [BS, T], M is batch
+        mixture_w = self.ss_model.encoder(mix_wav) # [BS, N, K],
+        mixture_encoder = self.ss_model.separator(mixture_w) # mixture_w: [BS, B, K], where K = (T - L) / (L / 2) + 1 = 2 T / L - 1
+
+        # 注意这里是sep模块之后 还没加conv1x1的情况下
+
+        predicted_map_this_step = Variable(torch.zeros(mix_wav.shape)).to(mix_wav.device) # First step to use all ZEROs
+        y_map_this_step = predicted_map_this_step
+        condition_last_step = self.ss_model.encoder(y_map_this_step)  # use a conv1d to subsample the original wav to [BS,N,K]
+        N, B = self.ss_model.N, self.ss_model.B
+        BS, K = mixture_w.shape[0],mixture_w.shape[-1] # new lenght
+
+
+        '''
+        >>> rnn = nn.LSTMCell(10, 20)
+        >>> input = torch.randn(6, 3, 10)
+        >>> hx = torch.randn(3, 20)
+        >>> cx = torch.randn(3, 20)
+        >>> output = []
+        >>> for i in range(6):
+                hx, cx = rnn(input[i], (hx, cx))
+                output.append(hx)
+        '''
+
+        predicted_maps = []
+        for step_idx in range(self.config.MAX_MIX):
+            cat_condition_this_step= torch.cat((mixture_encoder,condition_last_step),1) #BS,N,K --> BS,B+N,K
+            if step_idx==0:
+                # BS,B+N,K --> BS,K,B+N ---> BS*K,B+N --> BS*K,B
+                h_0,c_0=torch.zeros(BS*K, B).to(mix_wav.device),torch.zeros(BS*K, B).to(mix_wav.device)
+                lstm_h,lstm_c = self.spk_lstm(cat_condition_this_step.transpose(1,2).contiguous().view(-1,B+N),(h_0,c_0))
+                del h_0,c_0
             else:
-                predicted_maps = self.ss_model(src_original, query, tgt[1:-1], dict_spk2idx)
-        else:
-            # dec_enc_attn_list:nhead,bs,topk(2+1),T
-            predicted_maps = self.ss_model(src_original, dec_enc_attn_list[:,:,:2], tgt[1:-1], dict_spk2idx)
+                # BS,B+N,K --> BS,K,B+N ---> BS*K,B+N --> BS*K,B (lstm_h)
+                lstm_h, lstm_c = self.spk_lstm(cat_condition_this_step.transpose(1,2).contiguous().view(-1,B+N), (lstm_h,lstm_c))
+
+            predicted_map_this_step = self.ss_model.mask_conv1x1(lstm_h.view(-1,K,B).transpose(1,2)) # BS*K,B --> BS,K,B --->BS,B,K--->BS,N,K
+            predicted_map_this_step = F.relu(predicted_map_this_step).unsqueeze(1) # BS,1,N,K
+            predicted_map_this_step = self.ss_model.decoder(mixture_w, predicted_map_this_step) # BS,1,T
+            T_origin =mix_wav.size(-1)
+            T_conv = predicted_map_this_step.size(-1)
+            predicted_map_this_step = F.pad(predicted_map_this_step, (0, T_origin - T_conv))
+
+            # update the condition
+            y_map_this_step = predicted_map_this_step.view(BS,T_origin)
+            condition_last_step = self.ss_model.encoder(y_map_this_step)  # use a conv1d to subsample the original wav to [BS,N,K]
+
+            predicted_maps.append(predicted_map_this_step.view(BS,1,T_origin)) # BS,1,T
+
+        predicted_maps=torch.cat(predicted_maps,1)
+        return None, None, None, predicted_maps.transpose(0,1), None
+
+
+        if self.config.two_stage:
+            predicted_maps_2nd = self.second_ss_model(mix_wav,predicted_maps) # bs,T   bs,topk,T -->
+            return outputs.transpose(0, 1), pred, tgt[1:], predicted_maps.transpose(0, 1),\
+                   dec_enc_attn_list, predicted_maps_2nd.transpose( 0, 1)  # n_head*b,topk+1,T
+
         return outputs.transpose(0,1), pred, tgt[1:], predicted_maps.transpose(0, 1), dec_enc_attn_list  #n_head*b,topk+1,T
 
     def sample(self, src, src_len):

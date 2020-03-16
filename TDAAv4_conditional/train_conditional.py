@@ -29,19 +29,10 @@ parser = argparse.ArgumentParser(description='train_WSJ0.py')
 
 parser.add_argument('-config', default='config_WSJ0.yaml', type=str,
                     help="config file")
-# parser.add_argument('-gpus', default=range(4), nargs='+', type=int,
-parser.add_argument('-gpus', default=[2,3], nargs='+', type=int,
+parser.add_argument('-gpus', default=range(4), nargs='+', type=int,
+# parser.add_argument('-gpus', default=[2,3], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
-# parser.add_argument('-restore', default='../TDAAv4/data/data/log/2020-01-02-08:50:49/TDAAv3_144001.pt', type=str,
-#parser.add_argument('-restore', default='data/data/log/2020-01-15-08:55:56/TDAAv3_PIT_84001.pt', type=str,
-#parser.add_argument('-restore', default='data/data/log/2020-01-16-00:38:07/TDAAv3_PIT_84001.pt', type=str,
-# parser.add_argument('-restore', default='data/data/log/2020-01-16-23:07:10/TDAAv3_PIT_284001.pt', type=str,
-# parser.add_argument('-restore', default='TDAA_23_142001.pt', type=str,
-# parser.add_argument('-restore', default='TDAAv3_PIT_234001.pt', type=str, # from the v1 2&3 end separtion mode
-# parser.add_argument('-restore', default='TDAAv3_PIT_328001.pt', type=str, # from the v1 2&3 end separtion mode
-parser.add_argument('-restore', default='TDAAv3_PIT_408001.pt', type=str, # from the v1 2&3 end separtion mode
-# parser.add_argument('-restore', default='data/data/log/2020-02-20-11:50:36/TDAAv3_PIT_420001.pt', type=str,
-# parser.add_argument('-restore', default=None, type=str,
+parser.add_argument('-restore', default=None, type=str,
                     help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
                     help="Random seed")
@@ -49,7 +40,7 @@ parser.add_argument('-model', default='seq2seq', type=str,
                     help="Model selection")
 parser.add_argument('-score', default='', type=str,
                     help="score_fn")
-parser.add_argument('-notrain', default=1, type=bool,
+parser.add_argument('-notrain', default=0, type=bool,
                     help="train or not")
 parser.add_argument('-log', default='', type=str,
                     help="log directory")
@@ -125,14 +116,11 @@ else:
     optim = Optim(config.optim, config.learning_rate, config.max_grad_norm,
                   lr_decay=config.learning_rate_decay, start_decay_at=config.start_decay_at)
 
-if config.use_center_loss:
-    optim.set_parameters(list(model.parameters())+list(center_loss.parameters()))
-else:
-    optim.set_parameters(list(model.parameters()))
+optim.set_parameters(list(model.parameters()))
 
 if config.schedule:
     # scheduler = L.CosineAnnealingLR(optim.optimizer, T_max=config.epoch)
-    scheduler = L.StepLR(optim.optimizer, step_size=15, gamma=0.2)
+    scheduler = L.StepLR(optim.optimizer, step_size=10, gamma=0.8)
 
 # total number of parameters
 param_count = 0
@@ -177,17 +165,13 @@ best_SDR = 0.0
 
 # train
 global_par_dict={
-    'title': str('TDAAv4 Transformer PIT Tasnet.'),
+    'title': str('TDAAv4 Conditional Tasnet.'),
     'updates': updates,
     'batch_size': config.batch_size,
     'WFM': config.WFM,
     'global_emb': config.global_emb,
-    'schmidt': config.schmidt,
     'log path': str(log_path),
     'selfTune': config.is_SelfTune,
-    'cnn': config.speech_cnn_net,  # 是否采用CNN的结构来抽取
-    'relitu': config.relitu,
-    'ct_recu': config.ct_recu,  # 控制是否采用att递减的ct构成
     'loss':str(config.loss),
     'score fnc': str(config.infer_classifier),
 }
@@ -326,9 +310,6 @@ def train(epoch):
             feas_tgt = feas_tgt.cuda()
 
         model.zero_grad()
-        if config.use_center_loss:
-            center_loss.zero_grad()
-
         # aim_list 就是找到有正经说话人的地方的标号
         aim_list = (tgt[1:-1].transpose(0, 1).contiguous().view(-1) != dict_spk2idx['<EOS>']).nonzero().squeeze()
         aim_list = aim_list.data.cpu().numpy()
@@ -365,43 +346,13 @@ def train(epoch):
         print('best perms for this batch:', best_pmt)
         writer.add_scalars('scalar/loss',{'ss_loss':ss_loss.cpu().item()},updates)
 
-        # 按照Best_perm重新排列spk的预测目标
-        targets=targets.transpose(0,1) #bs,aim+1(EOS也在）
-        # print('targets',targets)
-        targets_old=targets
-        for idx,(tar,per) in enumerate(zip(targets,best_pmt)):
-            per.append(topk_max) #每个batch后面加个结尾，保持最后一个EOS不变
-            targets_old[idx]=tar[per]
-        targets=targets_old.transpose(0,1)
-        # print('targets',targets)
-
-        if 1 and len(opt.gpus) > 1:
-            sgm_loss, num_total, num_correct = model.module.compute_loss(outputs, targets, opt.memory)
-        else:
-            sgm_loss, num_total, num_correct = model.compute_loss(outputs, targets, opt.memory)
-        print(('loss for SGM,this batch:', sgm_loss.cpu().item()))
-        writer.add_scalars('scalar/loss',{'sgm_loss':sgm_loss.cpu().item()},updates)
-        if config.use_center_loss:
-            cen_alpha=0.01
-            cen_loss = center_loss(outputs.view(-1,config.SPK_EMB_SIZE), targets.view(-1))
-            print(('loss for SGM center loss,this batch:',cen_loss.cpu().item()))
-            writer.add_scalars('scalar/loss',{'center_loss':cen_loss.cpu().item()},updates)
-
-        if not config.use_tas:
-            loss = sgm_loss + 5 * ss_loss
-        else:
-            loss = 50* sgm_loss + ss_loss
+        loss =  ss_loss
 
         loss.backward()
 
-        if config.use_center_loss:
-            for c_param in center_loss.parameters():
-                c_param.grad.data *= (0.01/(cen_alpha*scheduler.get_lr()[0]))
         # print 'totallllllllllll loss:',loss
-        total_loss_sgm += sgm_loss.cpu().item()
         total_loss_ss += ss_loss.cpu().item()
         lera.log({
-            'sgm_loss': sgm_loss.cpu().item(),
             'ss_loss': ss_loss.cpu().item(),
             'loss:': loss.cpu().item(),
         })
@@ -427,25 +378,23 @@ def train(epoch):
             print(('SDRi_aver_now:', SDRi_SUM.mean()))
 
         total_loss += loss.cpu().item()
-        report_correct += num_correct.cpu().item()
-        report_total += num_total.cpu().item()
         optim.step()
 
         updates += 1
         if updates % 30 == 0:
             logging(
                 "time: %6.3f, epoch: %3d, updates: %8d, train loss this batch: %6.3f,sgm loss: %6.6f,ss loss: %6.6f,label acc: %6.6f\n"
-                % (time.time() - start_time, epoch, updates, loss / num_total, total_loss_sgm / 30.0,
-                   total_loss_ss / 30.0, report_correct/report_total))
-            lera.log({'label_acc':report_correct/report_total})
-            writer.add_scalars('scalar/loss',{'label_acc':report_correct/report_total},updates)
+                % (time.time() - start_time, epoch, updates, 0, total_loss_sgm / 30.0,
+                   total_loss_ss / 30.0, 0))
+            # lera.log({'label_acc':report_correct/report_total})
+            # writer.add_scalars('scalar/loss',{'label_acc':report_correct/report_total},updates)
             total_loss_sgm, total_loss_ss = 0, 0
 
         # continue
 
         if 0 and updates % config.eval_interval == 0 and epoch > 3: #建议至少跑几个epoch再进行测试，否则模型还没学到东西，会有很多问题。
             logging("time: %6.3f, epoch: %3d, updates: %8d, train loss: %6.5f\n"
-                    % (time.time() - start_time, epoch, updates, total_loss / report_total))
+                    % (time.time() - start_time, epoch, updates, 0))
             print(('evaluating after %d updates...\r' % updates))
             original_bs=config.batch_size
             score = eval(epoch) # eval的时候batch_size会变成1
@@ -469,7 +418,7 @@ def train(epoch):
             report_correct = 0
 
         if updates>10 and updates % config.save_interval == 1:
-            save_model(log_path + 'TDAAv3_PIT_{}.pt'.format(updates))
+            save_model(log_path + 'TDAAv4_conditional_{}.pt'.format(updates))
 
 
 def eval(epoch):
@@ -678,7 +627,7 @@ def main():
     for i in range(1, config.epoch + 1):
         if not opt.notrain:
             train(i)
-            save_model(log_path + 'TDAAv3_PIT_tmp.pt')
+            save_model(log_path + 'TDAAv3_conditional_tmp.pt')
         else:
             eval(i)
             # eval_recu(i)
