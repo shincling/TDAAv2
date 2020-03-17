@@ -70,23 +70,54 @@ class seq2seq(nn.Module):
         Var = torch.mean(Var, 0)  # 在batch的维度上平均
         return Var.detach()
 
-    def forward(self, src, src_len, tgt, tgt_len, dict_spk2idx,src_original=None,mix_wav=None,):
+    def choose_candidate(self, predicted_wav_this_step, clean_batch_dict, BS):
+        # predicted_wav: BS,T , clean_batch_dict: 长度为BS的列表，每个元素是dict，里面是序号对应的向量
+        # 每一步选出来一个最近的，然后将它从列表里删除去
+        spk_idx_list = []
+
+        def normalization_11(sig):
+            return sig / np.max(np.abs(sig))
+
+        cand_wavs_list = []
+        for idx in range(BS):
+            est_wav = predicted_wav_this_step[idx]  # T
+            candidates_dict = clean_batch_dict[idx]  # dict topk,T
+            key_min = None
+            snr_min = None  # original key and dist
+            for key, cand_wav in candidates_dict.items():
+                # dist = F.mse_loss(torch.from_numpy(normalization_11(est_wav.data.cpu().numpy())),torch.from_numpy(normalization_11(cand_wav.data.cpu().numpy())))
+                snr = models.cal_si_snr_with_order(cand_wav.view(1,1,-1), est_wav.view(1,1,-1), torch.ones([1]).int().cuda()*cand_wav.shape[-1])
+                if snr_min is None:
+                    snr_min = snr
+                    key_min = key
+                else:
+                    if snr > snr_min:
+                        snr_min = snr
+                        key_min = key
+            spk_idx_list.append(key_min)
+            cand_wavs_list.append(clean_batch_dict[idx][key_min].unsqueeze(0)) # list of 1,T
+            clean_batch_dict[idx].pop(key_min)  # 移除该元素
+
+        return cand_wavs_list, spk_idx_list, clean_batch_dict
+
+    def forward(self, src, src_len, tgt, tgt_len, dict_spk2idx,src_original=None,mix_wav=None,clean_wavs=None):
         # 感觉这是个把一个batch里的数据按从长到短调整顺序的意思
+        # clean_wavs: topk,BS,T
         # print(src.shape,src_original.shape)
         if src_original is None:
             src_original=src
-        src_original=src_original.transpose(0,1) # 确保要bs在第二维
-        lengths, indices = torch.sort(src_len.squeeze(0), dim=0, descending=True)
-        # todo: 这里只要一用排序，tgt那个就出问题，现在的长度都一样，所以没有排序也可以工作，这个得好好研究一下后面
-        # src = torch.index_select(src, dim=0, index=indices)
-        # tgt = torch.index_select(tgt, dim=0, index=indices)
-
-        src = src.transpose(0, 1)
-        tgt = tgt.transpose(0, 1) # convert to bs, output_len
         if mix_wav is not None:
             mix_wav=mix_wav.transpose(0,1)
+        if clean_wavs is not None:
+            clean_wavs=clean_wavs.transpose(0,1) # BS,topk,T
+            clean_batch_dict=[]
+            for clean_wav in clean_wavs:
+                # topk,T
+                this_dict={idx:cand for idx,cand in enumerate(clean_wav)}
+                clean_batch_dict.append(this_dict)
+            # print(clean_batch_dict)
 
-        tgt = tgt.transpose(0, 1) # convert to output_len(2+2), bs
+
 
         #  mixture: [BS, T], M is batch
         mixture_w = self.ss_model.encoder(mix_wav) # [BS, N, K],
@@ -100,42 +131,60 @@ class seq2seq(nn.Module):
         N, B = self.ss_model.N, self.ss_model.B
         BS, K = mixture_w.shape[0],mixture_w.shape[-1] # new lenght
 
-
-        '''
-        >>> rnn = nn.LSTMCell(10, 20)
-        >>> input = torch.randn(6, 3, 10)
-        >>> hx = torch.randn(3, 20)
-        >>> cx = torch.randn(3, 20)
-        >>> output = []
-        >>> for i in range(6):
-                hx, cx = rnn(input[i], (hx, cx))
-                output.append(hx)
-        '''
-
         predicted_maps = []
-        for step_idx in range(self.config.MAX_MIX):
-            cat_condition_this_step= torch.cat((mixture_encoder,condition_last_step),1) #BS,N,K --> BS,B+N,K
-            if step_idx==0:
-                # BS,B+N,K --> BS,K,B+N ---> BS*K,B+N --> BS*K,B
-                h_0,c_0=torch.zeros(BS*K, B).to(mix_wav.device),torch.zeros(BS*K, B).to(mix_wav.device)
-                lstm_h,lstm_c = self.spk_lstm(cat_condition_this_step.transpose(1,2).contiguous().view(-1,B+N),(h_0,c_0))
-                del h_0,c_0
-            else:
-                # BS,B+N,K --> BS,K,B+N ---> BS*K,B+N --> BS*K,B (lstm_h)
-                lstm_h, lstm_c = self.spk_lstm(cat_condition_this_step.transpose(1,2).contiguous().view(-1,B+N), (lstm_h,lstm_c))
+        if self.config. pit_without_tf: # greddy mode w/o Teacher-Forcing
+            for step_idx in range(self.config.MAX_MIX):
+                cat_condition_this_step= torch.cat((mixture_encoder,condition_last_step),1) #BS,N,K --> BS,B+N,K
+                if step_idx==0:
+                    # BS,B+N,K --> BS,K,B+N ---> BS*K,B+N --> BS*K,B
+                    h_0,c_0=torch.zeros(BS*K, B).to(mix_wav.device),torch.zeros(BS*K, B).to(mix_wav.device)
+                    lstm_h,lstm_c = self.spk_lstm(cat_condition_this_step.transpose(1,2).contiguous().view(-1,B+N),(h_0,c_0))
+                    del h_0,c_0
+                else:
+                    # BS,B+N,K --> BS,K,B+N ---> BS*K,B+N --> BS*K,B (lstm_h)
+                    lstm_h, lstm_c = self.spk_lstm(cat_condition_this_step.transpose(1,2).contiguous().view(-1,B+N), (lstm_h,lstm_c))
 
-            predicted_map_this_step = self.ss_model.mask_conv1x1(lstm_h.view(-1,K,B).transpose(1,2)) # BS*K,B --> BS,K,B --->BS,B,K--->BS,N,K
-            predicted_map_this_step = F.relu(predicted_map_this_step).unsqueeze(1) # BS,1,N,K
-            predicted_map_this_step = self.ss_model.decoder(mixture_w, predicted_map_this_step) # BS,1,T
-            T_origin =mix_wav.size(-1)
-            T_conv = predicted_map_this_step.size(-1)
-            predicted_map_this_step = F.pad(predicted_map_this_step, (0, T_origin - T_conv))
+                predicted_map_this_step = self.ss_model.mask_conv1x1(lstm_h.view(-1,K,B).transpose(1,2)) # BS*K,B --> BS,K,B --->BS,B,K--->BS,N,K
+                predicted_map_this_step = F.relu(predicted_map_this_step).unsqueeze(1) # BS,1,N,K
+                predicted_map_this_step = self.ss_model.decoder(mixture_w, predicted_map_this_step) # BS,1,T
+                T_origin =mix_wav.size(-1)
+                T_conv = predicted_map_this_step.size(-1)
+                predicted_map_this_step = F.pad(predicted_map_this_step, (0, T_origin - T_conv))
 
-            # update the condition
-            y_map_this_step = predicted_map_this_step.view(BS,T_origin)
-            condition_last_step = self.ss_model.encoder(y_map_this_step)  # use a conv1d to subsample the original wav to [BS,N,K]
+                # update the condition
+                y_map_this_step = predicted_map_this_step.view(BS,T_origin)
+                condition_last_step = self.ss_model.encoder(y_map_this_step)  # use a conv1d to subsample the original wav to [BS,N,K]
 
-            predicted_maps.append(predicted_map_this_step.view(BS,1,T_origin)) # BS,1,T
+                predicted_maps.append(predicted_map_this_step.view(BS,1,T_origin)) # BS,1,T
+
+        elif self.config.greddy_tf:
+            assert clean_wavs is not None
+            for step_idx in range(self.config.MAX_MIX):
+                cat_condition_this_step= torch.cat((mixture_encoder,condition_last_step),1) #BS,N,K --> BS,B+N,K
+                if step_idx==0:
+                    # BS,B+N,K --> BS,K,B+N ---> BS*K,B+N --> BS*K,B
+                    h_0,c_0=torch.zeros(BS*K, B).to(mix_wav.device),torch.zeros(BS*K, B).to(mix_wav.device)
+                    lstm_h,lstm_c = self.spk_lstm(cat_condition_this_step.transpose(1,2).contiguous().view(-1,B+N),(h_0,c_0))
+                    del h_0,c_0
+                else:
+                    # BS,B+N,K --> BS,K,B+N ---> BS*K,B+N --> BS*K,B (lstm_h)
+                    lstm_h, lstm_c = self.spk_lstm(cat_condition_this_step.transpose(1,2).contiguous().view(-1,B+N), (lstm_h,lstm_c))
+
+                predicted_map_this_step = self.ss_model.mask_conv1x1(lstm_h.view(-1,K,B).transpose(1,2)) # BS*K,B --> BS,K,B --->BS,B,K--->BS,N,K
+                predicted_map_this_step = F.relu(predicted_map_this_step).unsqueeze(1) # BS,1,N,K
+                predicted_map_this_step = self.ss_model.decoder(mixture_w, predicted_map_this_step) # BS,1,T
+                T_origin =mix_wav.size(-1)
+                T_conv = predicted_map_this_step.size(-1)
+                predicted_map_this_step = F.pad(predicted_map_this_step, (0, T_origin - T_conv))
+
+                # update the condition
+                y_map_this_step,spk_idx_list_this_step, clean_batch_dict= self.choose_candidate(predicted_map_this_step.view(BS,T_origin),clean_batch_dict,BS)
+                print('spk list:',step_idx,spk_idx_list_this_step)
+                # print('pred :', step_idx, predicted_map_this_step)
+                # print('y wav:',y_map_this_step)
+                y_map_this_step = torch.cat(y_map_this_step,0) #BS,T
+                condition_last_step = self.ss_model.encoder(y_map_this_step)  # use a conv1d to subsample the original wav to [BS,N,K]
+                predicted_maps.append(predicted_map_this_step.view(BS,1,T_origin)) # BS,1,T
 
         predicted_maps=torch.cat(predicted_maps,1)
         return None, None, None, predicted_maps.transpose(0,1), None

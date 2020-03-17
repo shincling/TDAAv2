@@ -281,7 +281,7 @@ def cal_si_snr_with_order(source, estimate_source, source_lengths):
     pair_wise_si_snr = torch.sum(pair_wise_proj ** 2, dim=2) / (torch.sum(e_noise ** 2, dim=2) + EPS)
     # print('pair_si_snr',pair_wise_si_snr[0,:])
     pair_wise_si_snr = 10 * torch.log10(pair_wise_si_snr + EPS)  # [B, C]
-    print(pair_wise_si_snr)
+    # print(pair_wise_si_snr)
 
     return torch.sum(pair_wise_si_snr,dim=1)/C
 

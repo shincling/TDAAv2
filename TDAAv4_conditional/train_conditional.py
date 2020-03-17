@@ -30,10 +30,11 @@ parser = argparse.ArgumentParser(description='train_WSJ0.py')
 parser.add_argument('-config', default='config_WSJ0.yaml', type=str,
                     help="config file")
 parser.add_argument('-gpus', default=range(4), nargs='+', type=int,
-# parser.add_argument('-gpus', default=[2,3], nargs='+', type=int,
+# parser.add_argument('-gpus', default=[2], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
+# parser.add_argument('-restore', default='data/data/log/2020-03-16-13:31:46/TDAAv3_conditional_tmp.pt', type=str,
 parser.add_argument('-restore', default=None, type=str,
-                    help="restore checkpoint")
+                                        help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
                     help="Random seed")
 parser.add_argument('-model', default='seq2seq', type=str,
@@ -174,6 +175,9 @@ global_par_dict={
     'selfTune': config.is_SelfTune,
     'loss':str(config.loss),
     'score fnc': str(config.infer_classifier),
+    'pit_without_tf': config.pit_without_tf,
+    'greddy_tf': config.greddy_tf,
+    'pit_2stage': config.pit_2stage
 }
 lera.log_hyperparams(global_par_dict)
 for item in list(global_par_dict.keys()):
@@ -314,7 +318,7 @@ def train(epoch):
         aim_list = (tgt[1:-1].transpose(0, 1).contiguous().view(-1) != dict_spk2idx['<EOS>']).nonzero().squeeze()
         aim_list = aim_list.data.cpu().numpy()
 
-        outputs, pred, targets, multi_mask, dec_enc_attn_list = model(src, src_len, tgt, tgt_len, dict_spk2idx, None, mix_wav=padded_mixture)  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
+        outputs, pred, targets, multi_mask, dec_enc_attn_list = model(src, src_len, tgt, tgt_len, dict_spk2idx, None, mix_wav=padded_mixture,clean_wavs=padded_source.transpose(0,1))  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
         print('mask size:', multi_mask.size())
         # writer.add_histogram('global gamma',gamma, updates)
 
@@ -331,6 +335,8 @@ def train(epoch):
         #     feas_tgt = x_input_map_multi.data * WFM_mask
 
         if config.use_tas:
+            # print('source',padded_source)
+            # print('est', multi_mask)
             if 1 and len(opt.gpus) > 1:
                 ss_loss, pmt_list, max_snr_idx,*__ = model.module.separation_tas_loss(padded_mixture, multi_mask,padded_source,mixture_lengths)
             else:
@@ -490,7 +496,6 @@ def eval(epoch):
         else:
             outputs, pred,targets, multi_mask, dec_enc_attn_list = model(src, src_len, tgt, tgt_len, dict_spk2idx, None,
                                                                     mix_wav=padded_mixture)  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
-        samples=list(pred.view(config.batch_size,top_k+1,-1).max(2)[1].data.cpu().numpy())
         '''
 
         if 1 and len(opt.gpus) > 1:
@@ -547,6 +552,9 @@ def eval(epoch):
             print(('Best SDR from {}---->{}'.format(best_SDR, SDR_SUM.mean())))
             best_SDR = SDR_SUM.mean()
             # save_model(log_path+'checkpoint_bestSDR{}.pt'.format(best_SDR))
+
+        batch_idx+=1
+        continue
         '''
         import matplotlib.pyplot as plt
         ax = plt.gca()
@@ -627,7 +635,7 @@ def main():
     for i in range(1, config.epoch + 1):
         if not opt.notrain:
             train(i)
-            save_model(log_path + 'TDAAv3_conditional_tmp.pt')
+            save_model(log_path + 'TDAAv4_conditional_tmp.pt')
         else:
             eval(i)
             # eval_recu(i)
