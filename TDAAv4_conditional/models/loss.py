@@ -157,7 +157,8 @@ def ss_loss(config, x_input_map_multi, multi_mask, y_multi_map, loss_multi_func,
     return loss_multi_speech
 
 def ss_tas_loss(config,mix_wav,predict_wav, y_multi_wav, mix_length,loss_multi_func,wav_loss):
-    loss = cal_loss_with_order(y_multi_wav,predict_wav,mix_length)[0]
+    # loss = cal_loss_with_order(y_multi_wav,predict_wav,mix_length)[0]
+    loss = cal_loss_with_sdr_order(y_multi_wav,predict_wav,mix_length)[0]
     return loss
 
 def ss_tas_pit_loss(config,mix_wav,predict_wav, y_multi_wav, mix_length,loss_multi_func,wav_loss):
@@ -223,6 +224,19 @@ def cal_loss_with_order(source, estimate_source, source_lengths):
     # print('real Tas SNI:',source[:,:,16000:16005])
     # print('pre Tas SNI:',estimate_source[:,:,16000:16005])
     max_snr = cal_si_snr_with_order(source, estimate_source, source_lengths)
+    loss = 0 - torch.mean(max_snr)
+    return loss,
+
+def cal_loss_with_sdr_order(source, estimate_source, source_lengths):
+    """
+    Args:
+        source: [B, C, T], B is batch size
+        estimate_source: [B, C, T]
+        source_lengths: [B]
+    """
+    # print('real Tas SNI:',source[:,:,16000:16005])
+    # print('pre Tas SNI:',estimate_source[:,:,16000:16005])
+    max_snr = cal_sdr_with_order(source, estimate_source, source_lengths)
     loss = 0 - torch.mean(max_snr)
     return loss,
 
@@ -321,6 +335,113 @@ def cal_si_snr_with_pit(source, estimate_source, source_lengths):
     # SI-SNR = 10 * log_10(||s_target||^2 / ||e_noise||^2)
     pair_wise_si_snr = torch.sum(pair_wise_proj ** 2, dim=3) / (torch.sum(e_noise ** 2, dim=3) + EPS)
     pair_wise_si_snr = 10 * torch.log10(pair_wise_si_snr + EPS)  # [B, C, C]
+
+    # Get max_snr of each utterance
+    # permutations, [C!, C]
+    perms = source.new_tensor(list(permutations(list(range(C)))), dtype=torch.long)
+    # one-hot, [C!, C, C]
+    index = torch.unsqueeze(perms, 2)
+    # perms_one_hot = source.new_zeros((*perms.size(), C)).scatter_(2, index, 1)
+    perms_one_hot = source.new_zeros((perms.size()[0],perms.size()[1], C)).scatter_(2, index, 1)
+    # [B, C!] <- [B, C, C] einsum [C!, C, C], SI-SNR sum of each permutation
+    snr_set = torch.einsum('bij,pij->bp', [pair_wise_si_snr, perms_one_hot])
+    max_snr_idx = torch.argmax(snr_set, dim=1)  # [B]
+    # max_snr = torch.gather(snr_set, 1, max_snr_idx.view(-1, 1))  # [B, 1]
+    max_snr, _ = torch.max(snr_set, dim=1, keepdim=True)
+    max_snr /= C
+    return max_snr, perms, max_snr_idx
+
+def cal_sdr_with_order(source, estimate_source, source_lengths):
+    """Calculate SI-SNR with given order.
+    Args:
+        source: [B, C, T], B is batch size
+        estimate_source: [B, C, T]
+        source_lengths: [B], each item is between [0, T]
+    """
+    assert source.size() == estimate_source.size()
+    B, C, T = source.size()
+    # mask padding position along T
+    mask = get_mask(source, source_lengths)
+    estimate_source *= mask
+
+    # Step 1. Zero-mean norm
+    num_samples = source_lengths.view(-1, 1, 1).float()  # [B, 1, 1]
+    mean_target = torch.sum(source, dim=2, keepdim=True) / num_samples
+    mean_estimate = torch.sum(estimate_source, dim=2, keepdim=True) / num_samples
+    zero_mean_target = source - mean_target
+    zero_mean_estimate = estimate_source - mean_estimate
+    # mask padding position along T
+    zero_mean_target *= mask
+    zero_mean_estimate *= mask
+
+    # Step 2. SI-SNR with order
+    # reshape to use broadcast
+    s_target = zero_mean_target  # [B, C, T]
+    # print('s_target',s_target[0,:,16000:16005])
+    s_estimate = zero_mean_estimate  # [B, C, T]
+    # print('s_estimate',s_estimate[0,:,16000:16005])
+    # s_target = <s', s>s / ||s||^2
+    pair_wise_dot = torch.sum(s_estimate * s_target, dim=2, keepdim=True)  # [B, C, 1]
+    s_target_energy = torch.sum(s_target ** 2, dim=2, keepdim=True) + EPS  # [B, C, 1]
+    pair_wise_proj = pair_wise_dot * s_target / s_target_energy  # [B, C, T]
+    # e_noise = s' - s_target
+    e_noise = s_estimate - pair_wise_proj  # [B, C, T]
+    # print('e_noise',e_noise[0,:,16000:16005])
+
+    # SI-SNR = 10 * log_10(||s_target||^2 / ||e_noise||^2)
+    pair_wise_si_snr = torch.sum(pair_wise_proj ** 2, dim=2) / (torch.sum(e_noise ** 2, dim=2) + EPS)
+    # print('pair_si_snr',pair_wise_si_snr[0,:])
+    pair_wise_si_snr = 10 * torch.log10(pair_wise_si_snr + EPS)  # [B, C]
+    # print('sisnr',pair_wise_si_snr)
+
+    # SDR
+    # pair_wise_sdr =  torch.sum((s_target-s_estimate)** 2, dim=2)/(torch.sum(s_target** 2, dim=2)  + EPS)
+    pair_wise_sdr =  torch.sum((source-estimate_source)** 2, dim=2)/(torch.sum(source** 2, dim=2) + EPS)
+    # print('pair_si_snr',pair_wise_si_snr[0,:])
+    pair_wise_sdr = -10 * torch.log10(pair_wise_sdr + EPS)  # [B, C]
+    # print('sdr',pair_wise_sdr,'\n')
+
+    return torch.sum(pair_wise_sdr,dim=1)/C
+
+def cal_sdr_with_pit(source, estimate_source, source_lengths):
+    """Calculate SI-SNR with PIT training.
+    Args:
+        source: [B, C, T], B is batch size
+        estimate_source: [B, C, T]
+        source_lengths: [B], each item is between [0, T]
+    """
+    assert source.size() == estimate_source.size()
+    B, C, T = source.size()
+    # mask padding position along T
+    mask = get_mask(source, source_lengths)
+    estimate_source *= mask
+
+    # Step 1. Zero-mean norm
+    num_samples = source_lengths.view(-1, 1, 1).float()  # [B, 1, 1]
+    mean_target = torch.sum(source, dim=2, keepdim=True) / num_samples
+    mean_estimate = torch.sum(estimate_source, dim=2, keepdim=True) / num_samples
+    # zero_mean_target = source - mean_target
+    # zero_mean_estimate = estimate_source - mean_estimate
+    zero_mean_target = source
+    zero_mean_estimate = estimate_source
+    # mask padding position along T
+    zero_mean_target *= mask
+    zero_mean_estimate *= mask
+
+    # Step 2. SI-SNR with PIT
+    # reshape to use broadcast
+    s_target = torch.unsqueeze(zero_mean_target, dim=1)  # [B, 1, C, T]
+    s_estimate = torch.unsqueeze(zero_mean_estimate, dim=2)  # [B, C, 1, T]
+    # s_target = <s', s>s / ||s||^2
+    pair_wise_dot = torch.sum(s_estimate * s_target, dim=3, keepdim=True)  # [B, C, C, 1]
+    s_target_energy = torch.sum(s_target ** 2, dim=3, keepdim=True) + EPS  # [B, 1, C, 1]
+    pair_wise_proj = pair_wise_dot * s_target / s_target_energy  # [B, C, C, T]
+    # e_noise = s' - s_target
+    e_noise = s_estimate - s_target # [B, C, C, T]
+    # SI-SNR = 10 * log_10(||s_target||^2 / ||e_noise||^2)
+    pair_wise_si_snr = torch.sum(s_target** 2, dim=3) / (torch.sum(e_noise ** 2, dim=3) + EPS)
+    pair_wise_si_snr = 10 * torch.log10(pair_wise_si_snr + EPS)  # [B, C, C]
+
 
     # Get max_snr of each utterance
     # permutations, [C!, C]
