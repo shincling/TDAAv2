@@ -29,19 +29,24 @@ parser = argparse.ArgumentParser(description='train_WSJ0.py')
 
 parser.add_argument('-config', default='config_WSJ0.yaml', type=str,
                     help="config file")
-parser.add_argument('-gpus', default=range(4), nargs='+', type=int,
-# parser.add_argument('-gpus', default=[2], nargs='+', type=int,
+# parser.add_argument('-gpus', default=range(4), nargs='+', type=int,
+parser.add_argument('-gpus', default=[3], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
 # parser.add_argument('-restore', default='data/data/log/2020-03-16-13:31:46/TDAAv3_conditional_tmp.pt', type=str,
-parser.add_argument('-restore', default=None, type=str,
-                                        help="restore checkpoint")
+# parser.add_argument('-restore', default='data/data/log/2020-03-17-09:29:39/TDAAv4_conditional_18001.pt', type=str,
+# parser.add_argument('-restore', default='data/data/log/2020-03-18-04:34:52/TDAAv4_conditional_tmp.pt', type=str,
+# parser.add_argument('-restore', default='data/data/log/2020-03-20-02:06:33/TDAAv4_conditional_601.pt', type=str,
+# parser.add_argument('-restore', default='TDAAv4_conditional_tmp03.pt', type=str,
+parser.add_argument('-restore', default='data/data/log/2020-04-03-08:50:07/TDAAv4_conditional_tmp.pt', type=str,
+# parser.add_argument('-restore', default=None, type=str,
+                    help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
                     help="Random seed")
 parser.add_argument('-model', default='seq2seq', type=str,
                     help="Model selection")
 parser.add_argument('-score', default='', type=str,
                     help="score_fn")
-parser.add_argument('-notrain', default=0, type=bool,
+parser.add_argument('-notrain', default=1, type=bool,
                     help="train or not")
 parser.add_argument('-log', default='', type=str,
                     help="log directory")
@@ -318,10 +323,14 @@ def train(epoch):
         aim_list = (tgt[1:-1].transpose(0, 1).contiguous().view(-1) != dict_spk2idx['<EOS>']).nonzero().squeeze()
         aim_list = aim_list.data.cpu().numpy()
 
-        outputs, pred, targets, multi_mask, dec_enc_attn_list = model(src, src_len, tgt, tgt_len, dict_spk2idx, None, mix_wav=padded_mixture,clean_wavs=padded_source.transpose(0,1))  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
+        outputs, pred, spks_ordre_list, multi_mask, y_map= model(src, src_len, tgt, tgt_len, dict_spk2idx, None, mix_wav=padded_mixture,clean_wavs=padded_source.transpose(0,1))  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
         print('mask size:', multi_mask.size())
+        print('y map size:', y_map.size())
+        # print('spk order:', spks_ordre_list) # bs,topk
         # writer.add_histogram('global gamma',gamma, updates)
-
+        multi_mask = multi_mask.transpose(0, 1)
+        y_map = y_map.transpose(0,1)
+        spks_ordre_list = spks_ordre_list.transpose(0,1)
 
         src = src.transpose(0, 1)
         # expand the raw mixed-features to topk_max channel.
@@ -330,7 +339,6 @@ def train(epoch):
         topk_max = topk_this_batch  # 最多可能的topk个数
         x_input_map_multi = torch.unsqueeze(src, 1).expand(siz[0], topk_max, siz[1], siz[2]).contiguous()#.view(-1, siz[1], siz[2])
         # x_input_map_multi = x_input_map_multi[aim_list]
-        multi_mask = multi_mask.transpose(0, 1)
         # if config.WFM:
         #     feas_tgt = x_input_map_multi.data * WFM_mask
 
@@ -338,10 +346,10 @@ def train(epoch):
             # print('source',padded_source)
             # print('est', multi_mask)
             if 1 and len(opt.gpus) > 1:
-                ss_loss, pmt_list, max_snr_idx,*__ = model.module.separation_tas_loss(padded_mixture, multi_mask,padded_source,mixture_lengths)
+                ss_loss = model.module.separation_tas_sdr_order_loss(padded_mixture, multi_mask, y_map,mixture_lengths)
             else:
-                ss_loss, pmt_list, max_snr_idx, *__= model.separation_tas_loss(padded_mixture, multi_mask, padded_source,mixture_lengths)
-            best_pmt=[list(pmt_list[int(mm)].data.cpu().numpy()) for mm in max_snr_idx]
+                ss_loss = model.separation_tas_sdr_order_loss(padded_mixture, multi_mask, y_map,mixture_lengths)
+            # best_pmt=[list(pmt_list[int(mm)].data.cpu().numpy()) for mm in max_snr_idx]
         else:
             if 1 and len(opt.gpus) > 1:  # 先ss获取Perm
                 ss_loss, best_pmt = model.module.separation_pit_loss(x_input_map_multi, multi_mask, feas_tgt)
@@ -349,10 +357,11 @@ def train(epoch):
                 ss_loss, best_pmt = model.separation_pit_loss(x_input_map_multi, multi_mask, feas_tgt)
 
         print('loss for SS,this batch:', ss_loss.cpu().item())
-        print('best perms for this batch:', best_pmt)
+        # print('best perms for this batch:', best_pmt)
+        print('greddy perms for this batch:', [ii for ii in spks_ordre_list.data.cpu().numpy()])
         writer.add_scalars('scalar/loss',{'ss_loss':ss_loss.cpu().item()},updates)
 
-        loss =  ss_loss
+        loss = ss_loss
 
         loss.backward()
 
@@ -363,7 +372,7 @@ def train(epoch):
             'loss:': loss.cpu().item(),
         })
 
-        if updates>10 and updates % config.eval_interval in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]:
+        if updates>10 and updates % config.eval_interval in [0, 1, 2, 3, 4, 5]:
             if not config.use_tas:
                 predicted_maps = multi_mask * x_input_map_multi.view(siz[0] * topk_max, siz[1], siz[2])
                 # predicted_maps=Variable(feas_tgt) # 这个是groundTruth
@@ -372,9 +381,9 @@ def train(epoch):
                 del predicted_maps, multi_mask, x_input_map_multi
                 sdr_aver_batch, sdri_aver_batch = bss_test.cal('batch_output1/')
             else:
-                utils.bss_eval_tas(config, multi_mask, train_data['multi_spk_fea_list'], raw_tgt, train_data, dst='batch_output1')
+                utils.bss_eval_tas(config, multi_mask, train_data['multi_spk_fea_list'], raw_tgt, train_data, dst=log_path+'/batch_output1')
                 del x_input_map_multi
-                sdr_aver_batch, sdri_aver_batch = bss_test.cal('batch_output1/')
+                sdr_aver_batch, sdri_aver_batch = bss_test.cal(log_path+'/batch_output1/')
             lera.log({'SDR sample': sdr_aver_batch})
             lera.log({'SDRi sample': sdri_aver_batch})
             writer.add_scalars('scalar/loss',{'SDR_sample':sdr_aver_batch,'SDRi_sample':sdri_aver_batch},updates)
@@ -430,6 +439,10 @@ def train(epoch):
 def eval(epoch):
     # config.batch_size=1
     model.eval()
+    config.greddy_tf=0
+    config.pit_without_tf=1
+    model.config.greddy_tf=0
+    model.config.pit_without_tf=1
     # print '\n\n测试的时候请设置config里的batch_size为1！！！please set the batch_size as 1'
     reference, candidate, source, alignments = [], [], [], []
     e = epoch
@@ -463,6 +476,7 @@ def eval(epoch):
         tgt = Variable(torch.from_numpy(np.array([list(range(top_k+1))+[102] for __ in range(config.batch_size)], dtype=np.int))).transpose(0, 1)  # 转换成数字，然后前后加开始和结束符号。
 
         padded_mixture, mixture_lengths, padded_source = eval_data['tas_zip']
+        padded_mixture = padded_source[:,0]
         padded_mixture=torch.from_numpy(padded_mixture).float()
         mixture_lengths=torch.from_numpy(mixture_lengths)
         padded_source=torch.from_numpy(padded_source).float()
@@ -492,10 +506,10 @@ def eval(epoch):
 
         if 1 and len(opt.gpus) > 1:
             outputs, pred,targets, multi_mask, dec_enc_attn_list = model(src, src_len, tgt, tgt_len, dict_spk2idx, None,
-                                                                    mix_wav=padded_mixture)  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
+                                                                    mix_wav=padded_mixture, clean_wavs=padded_source.transpose(0,1))  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
         else:
             outputs, pred,targets, multi_mask, dec_enc_attn_list = model(src, src_len, tgt, tgt_len, dict_spk2idx, None,
-                                                                    mix_wav=padded_mixture)  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
+                                                                    mix_wav=padded_mixture, clean_wavs=padded_source.transpose(0,1))  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
         '''
 
         if 1 and len(opt.gpus) > 1:
@@ -518,6 +532,7 @@ def eval(epoch):
         topk_max = top_k
         x_input_map_multi = torch.unsqueeze(src, 1).expand(siz[0], topk_max, siz[1], siz[2])
         multi_mask = multi_mask.transpose(0, 1)
+        print('multi_mask size',multi_mask.shape)
 
         if test_or_valid != 'test':
             if config.use_tas:

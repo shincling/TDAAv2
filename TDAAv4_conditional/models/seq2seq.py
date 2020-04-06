@@ -62,6 +62,9 @@ class seq2seq(nn.Module):
     def separation_tas_loss(self, x_input_wav_multi,predict_wav, y_multi_wav,mix_lengths):
         return models.ss_tas_pit_loss(self.config, x_input_wav_multi,predict_wav, y_multi_wav, mix_lengths,self.loss_for_ss,self.wav_loss)
 
+    def separation_tas_sdr_order_loss(self, x_input_wav_multi,predict_wav, y_multi_wav,mix_lengths):
+        return models.ss_tas_loss(self.config, x_input_wav_multi,predict_wav, y_multi_wav, mix_lengths,self.loss_for_ss,self.wav_loss)
+
     def update_var(self, x_input_map_multi, multi_masks, y_multi_map):
         predict_multi_map = torch.mean(multi_masks * x_input_map_multi, -2)  # 在时间维度上平均
         y_multi_map = torch.mean(Variable(y_multi_map), -2)  # 在时间维度上平均
@@ -70,33 +73,34 @@ class seq2seq(nn.Module):
         Var = torch.mean(Var, 0)  # 在batch的维度上平均
         return Var.detach()
 
+    def normalize(self,bs_vec):
+        return bs_vec/(torch.max(torch.abs(bs_vec),1)[0]).unsqueeze(1)
+
     def choose_candidate(self, predicted_wav_this_step, clean_batch_dict, BS):
         # predicted_wav: BS,T , clean_batch_dict: 长度为BS的列表，每个元素是dict，里面是序号对应的向量
         # 每一步选出来一个最近的，然后将它从列表里删除去
         spk_idx_list = []
 
-        def normalization_11(sig):
-            return sig / np.max(np.abs(sig))
-
         cand_wavs_list = []
         for idx in range(BS):
             est_wav = predicted_wav_this_step[idx]  # T
             candidates_dict = clean_batch_dict[idx]  # dict topk,T
-            key_min = None
-            snr_min = None  # original key and dist
+            key_max = None
+            snr_max = None  # original key and dist
             for key, cand_wav in candidates_dict.items():
                 # dist = F.mse_loss(torch.from_numpy(normalization_11(est_wav.data.cpu().numpy())),torch.from_numpy(normalization_11(cand_wav.data.cpu().numpy())))
-                snr = models.cal_si_snr_with_order(cand_wav.view(1,1,-1), est_wav.view(1,1,-1), torch.ones([1]).int().cuda()*cand_wav.shape[-1])
-                if snr_min is None:
-                    snr_min = snr
-                    key_min = key
+                # snr = models.cal_si_snr_with_order(cand_wav.view(1,1,-1), est_wav.view(1,1,-1), torch.ones([1]).int().cuda()*cand_wav.shape[-1])
+                snr = models.cal_sdr_with_order(cand_wav.view(1,1,-1), est_wav.view(1,1,-1), torch.ones([1]).int().cuda()*cand_wav.shape[-1])
+                if snr_max is None:
+                    snr_max = snr
+                    key_max = key
                 else:
-                    if snr > snr_min:
-                        snr_min = snr
-                        key_min = key
-            spk_idx_list.append(key_min)
-            cand_wavs_list.append(clean_batch_dict[idx][key_min].unsqueeze(0)) # list of 1,T
-            clean_batch_dict[idx].pop(key_min)  # 移除该元素
+                    if snr > snr_max:
+                        snr_max = snr
+                        key_max = key
+            spk_idx_list.append(key_max)
+            cand_wavs_list.append(clean_batch_dict[idx][key_max].unsqueeze(0)) # list of 1,T
+            clean_batch_dict[idx].pop(key_max)  # 移除该元素
 
         return cand_wavs_list, spk_idx_list, clean_batch_dict
 
@@ -132,8 +136,11 @@ class seq2seq(nn.Module):
         BS, K = mixture_w.shape[0],mixture_w.shape[-1] # new lenght
 
         predicted_maps = []
-        if self.config. pit_without_tf: # greddy mode w/o Teacher-Forcing
+        y_maps = []
+        spks_list= []
+        if self.config.pit_without_tf: # greddy mode w/o Teacher-Forcing
             for step_idx in range(self.config.MAX_MIX):
+            # for step_idx in range():
                 cat_condition_this_step= torch.cat((mixture_encoder,condition_last_step),1) #BS,N,K --> BS,B+N,K
                 if step_idx==0:
                     # BS,B+N,K --> BS,K,B+N ---> BS*K,B+N --> BS*K,B
@@ -156,6 +163,8 @@ class seq2seq(nn.Module):
                 condition_last_step = self.ss_model.encoder(y_map_this_step)  # use a conv1d to subsample the original wav to [BS,N,K]
 
                 predicted_maps.append(predicted_map_this_step.view(BS,1,T_origin)) # BS,1,T
+            predicted_maps = torch.cat(predicted_maps, 1)
+            return None, None, None, predicted_maps.transpose(0,1), None
 
         elif self.config.greddy_tf:
             assert clean_wavs is not None
@@ -183,11 +192,36 @@ class seq2seq(nn.Module):
                 # print('pred :', step_idx, predicted_map_this_step)
                 # print('y wav:',y_map_this_step)
                 y_map_this_step = torch.cat(y_map_this_step,0) #BS,T
-                condition_last_step = self.ss_model.encoder(y_map_this_step)  # use a conv1d to subsample the original wav to [BS,N,K]
+                '''
+                # import soundfile as sf
+                # sf.write('pre.wav',self.normalize(predicted_map_this_step.view(BS,T_origin))[2].data.cpu().numpy(),8000)
+                # sf.write('y_map.wav',self.normalize(y_map_this_step)[2].data.cpu().numpy(),8000)
+
+                for idd in range(BS):
+                    if F.mse_loss(self.normalize(predicted_map_this_step.view(BS,T_origin))[idd],self.normalize(y_map_this_step)[idd]) \
+                        > F.mse_loss(-1*self.normalize(predicted_map_this_step.view(BS,T_origin))[idd],self.normalize(y_map_this_step)[idd]):
+                        print('Negtive scale.')
+                        scale=-1
+                    else:
+                        print('Positive scale.')
+                        scale=1
+                        1/0
+
+                y_map_this_step=scale*predicted_map_this_step.view(BS,T_origin) #infer的时候用这个应该
+                # condition_last_step = self.ss_model.encoder(self.normalize(-1*y_map_this_step))  # use a conv1d to subsample the original wav to [BS,N,K]
+                '''
+                # training add some white noise
+                # condition_last_step = self.ss_model.encoder(self.normalize(y_map_this_step+0.3*torch.randn(y_map_this_step.shape).to(y_map_this_step.device)))  # use a conv1d to subsample the original wav to [BS,N,K]
+                condition_last_step = self.ss_model.encoder(y_map_this_step+0.5*torch.randn(y_map_this_step.shape).to(y_map_this_step.device))  # use a conv1d to subsample the original wav to [BS,N,K]
+                # condition_last_step = self.ss_model.encoder(self.normalize(y_map_this_step))  # use a conv1d to subsample the original wav to [BS,N,K]
+                # condition_last_step = self.ss_model.encoder(y_map_this_step)  # use a conv1d to subsample the original wav to [BS,N,K]
                 predicted_maps.append(predicted_map_this_step.view(BS,1,T_origin)) # BS,1,T
+                y_maps.append(y_map_this_step.view(1,BS,T_origin)) # step个1,BS,T
+                spks_list.append(spk_idx_list_this_step)
 
         predicted_maps=torch.cat(predicted_maps,1)
-        return None, None, None, predicted_maps.transpose(0,1), None
+        y_maps=torch.cat(y_maps,0) # topk,BS,T
+        return None, None, torch.from_numpy(np.array(spks_list)).to(y_maps.device), predicted_maps.transpose(0,1), y_maps
 
 
         if self.config.two_stage:
