@@ -42,9 +42,9 @@ TEST_LIST = aim_path + '/test_list'
 # 未登录文件列表
 UNK_LIST = aim_path + '/unk_list'
 
-output_tmp_wav = 1
+output_tmp_wav = 0
 num_rounds= 2
-average_speech_len = int(0.5 * config.FRAME_RATE)
+average_speech_len = int(0.2 * config.FRAME_RATE)
 config.silence_dur = 2 * config.FRAME_RATE
 
 def random_len(length,ratio=0.5):
@@ -418,6 +418,7 @@ def prepare_data(mode, train_or_test, min=None, max=None):
                     mix_feas = np.array(mix_feas)
                     mix_phase = np.array(mix_phase)
                     aim_fea = np.array(aim_fea)
+                    mix_angle = np.array(mix_angle)
                     # aim_spkid=np.array(aim_spkid)
                     query = np.array(query)
                     print(('spk_list_from_this_gen:{}'.format(aim_spkname)))
