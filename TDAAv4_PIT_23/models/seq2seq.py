@@ -40,15 +40,20 @@ class seq2seq(nn.Module):
         speech_fre = input_emb_size
         num_labels = tgt_vocab_size
         if config.use_tas:
-            self.ss_model = models.ConvTasNet(config)
-            if self.config.two_stage:
-                self.second_ss_model = models.ConvTasNet_2nd(config)
-                for p in self.encoder.parameters():
-                    p.requires_grad = False
-                for p in self.decoder.parameters():
-                    p.requires_grad = False
-                for p in self.ss_model.parameters():
-                    p.requires_grad = False
+            if self.config.use_dprnn:
+                self.ss_model = models.FaSNet_base(config)
+                if self.config.two_stage:
+                    self.second_ss_model = models.FaSNet_base_2nd(config)
+            else:
+                self.ss_model = models.ConvTasNet(config)
+                if self.config.two_stage:
+                    self.second_ss_model = models.ConvTasNet_2nd(config)
+                    for p in self.encoder.parameters():
+                        p.requires_grad = False
+                    for p in self.decoder.parameters():
+                        p.requires_grad = False
+                    for p in self.ss_model.parameters():
+                        p.requires_grad = False
         else:
             # self.ss_model = models.SS_att(config, speech_fre, mix_speech_len, num_labels)
             self.ss_model = models.SS(config, speech_fre, mix_speech_len, num_labels)
@@ -62,6 +67,13 @@ class seq2seq(nn.Module):
             return models.ss_loss(self.config, x_input_map_multi, masks, y_multi_map, self.loss_for_ss,self.wav_loss)
         else:
             return models.ss_loss_MLMSE(self.config, x_input_map_multi, masks, y_multi_map, self.loss_for_ss, Var)
+
+    def silence_loss(self,  est_mask):
+        # est: bs, T
+        square = est_mask*est_mask #bs,T
+        sum = torch.sum(square,1) #bs
+        dist = -10 * torch.log10(sum)
+        return torch.mean(-1*dist)
 
     def separation_pit_loss(self, x_input_map_multi, masks, y_multi_map):
         return models.ss_pit_loss(self.config, x_input_map_multi, masks, y_multi_map, self.loss_for_ss,self.wav_loss)
@@ -101,11 +113,18 @@ class seq2seq(nn.Module):
         else:
             pred, gold, outputs,embs,dec_slf_attn_list, dec_enc_attn_list= self.decoder(tgt[:,1:-1], contexts, lengths.data.tolist())
 
+        if self.config.init_classifier:
+            return outputs.transpose(0, 1), pred, tgt.transpose(0,1)[1:], pred, dec_enc_attn_list  # n_head*b,topk+1,T
+
         if 0 and self.config.use_emb:
             query=embs[:,1:]
         else:
             query=outputs[:,:-1]
         del embs,dec_slf_attn_list
+
+        if self.config.add_noise_in_query:
+            query = query+0.5*torch.randn(query.shape).to(query.device)
+
         #outputs: bs,len+1(2+1),emb , embs是类似spk_emb的输入
         tgt = tgt.transpose(0, 1) # convert to output_len(2+2), bs
         if 1:
