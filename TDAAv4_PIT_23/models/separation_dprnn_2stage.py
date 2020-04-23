@@ -1,8 +1,5 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
-# @Time     : 19-11-1 09:12:12
-# @Author   : zm
-# @File     : model.py
 # @Software : PyCharm
 
 import torch
@@ -94,9 +91,9 @@ class Encoder(nn.Module):
         self.W, self.N = W, N
         # Components
         # 50% overlap
-        self.conv1d_U = nn.Conv1d(1, N, kernel_size=W, stride=W // 2, bias=False)
+        self.conv1d_U = nn.Conv1d(2, N, kernel_size=W, stride=W // 2, bias=False)
 
-    def forward(self, mixture):
+    def forward(self, mixture,first_stage_masks):
         """
         Args:
             mixture: [B, T], B is batch size, T is #samples
@@ -104,8 +101,11 @@ class Encoder(nn.Module):
             mixture_w: [B, N, L], where L = (T-W)/(W/2)+1 = 2T/W-1
             L is the number of time steps
         """
-        mixture = torch.unsqueeze(mixture, 1)  # [B, 1, T]
-        mixture_w = F.relu(self.conv1d_U(mixture))  # [B, N, L]
+        topk, T_length = first_stage_masks.shape[-2:]
+        mixture = torch.unsqueeze(mixture, 1).expand(-1,topk,-1).view(-1,1,T_length)  # [M*topk,1 T]
+        first_stage_masks =  first_stage_masks.view(-1,1,T_length) # M*topk,1,T
+        mixture = torch.cat([mixture,first_stage_masks],1) # M*topk,2,T
+        mixture_w = F.relu(self.conv1d_U(mixture))  # [M*topk, N, L]
         return mixture_w
 
 class Decoder(nn.Module):
@@ -116,23 +116,23 @@ class Decoder(nn.Module):
         # Components
         self.basis_signals = nn.Linear(E, W, bias=False)
 
-    def forward(self, mixture_w, est_mask):
+    def forward(self, mixture_w, est_mask,topk):
         """
         Args:
-            mixture_w: [B, E, L]
-            est_mask: [B, C, E, L]
+            mixture_w: [B*topk, E, L]
+            est_mask: [B*topk, E, L]
         Returns:
-            est_source: [B, C, T]
+            est_source: [B,topk, T]
         """
         # D = W * M
         #print(mixture_w.shape)
         #print(est_mask.shape)
-        source_w = torch.unsqueeze(mixture_w, 1) * est_mask  # [B, C, E, L]
-        source_w = torch.transpose(source_w, 2, 3) # [B, C, L, E]
+        source_w = mixture_w * est_mask  # [B*C, E, L]
+        source_w = torch.transpose(source_w, 1, 2) # [B*C, L, E]
         # S = DV
-        est_source = self.basis_signals(source_w)  # [B, C, L, W]
+        est_source = self.basis_signals(source_w)  # [B*C, L, W]
         est_source = overlap_and_add(est_source, self.W//2) # B x C x T
-        return est_source
+        return est_source.view(-1,topk,est_source.shape[-1])
 
 
 class SingleRNN(nn.Module):
@@ -325,46 +325,43 @@ class BF_module(DPRNN_base):
         # self.output_gate = nn.Sequential(nn.Conv1d(self.feature_dim, self.feature_dim, 1),
         #                                  nn.Sigmoid()
         #                                  )
-        self.output = nn.Sequential(nn.Conv1d(self.feature_dim+512, self.feature_dim, 1),
+        self.output = nn.Sequential(nn.Conv1d(self.feature_dim, self.feature_dim, 1),
                                     nn.Tanh()
                                     )
-        self.output_gate = nn.Sequential(nn.Conv1d(self.feature_dim+512, self.feature_dim, 1),
+        self.output_gate = nn.Sequential(nn.Conv1d(self.feature_dim, self.feature_dim, 1),
                                          nn.Sigmoid()
                                          )
 
-    def forward(self, input, voiceP):
+    def forward(self, input, topk):
         #input = input.to(device)
-        # input: (B, E, T)
-        # voiceP: (BS,topk,D)
+        # input: (B*topk, E, T)
         batch_size, E, seq_length = input.shape
-        _, topk, D = voiceP.size()
-        assert batch_size==_
         self.num_spk=topk
 
-        enc_feature = self.BN(input) # (B, E, L)-->(B, N, L)
+        enc_feature = self.BN(input) # (B*topk, E, L)-->(B*topk, N, L)
         N = enc_feature.shape[1]
         # split the encoder output into overlapped, longer segments
-        enc_segments, enc_rest = self.split_feature(enc_feature, self.segment_size)  # B, N, L, K: L is the segment_size
+        enc_segments, enc_rest = self.split_feature(enc_feature, self.segment_size)  # B*topk, N, L, K: L is the segment_size
         #print('enc_segments.shape {}'.format(enc_segments.shape))
         # print('output shape',enc_segments.shape)
         # pass to DPRNN
         output = self.DPRNN(enc_segments)
         # print('output shape',output.shape)
-        output = output.view(batch_size , self.feature_dim, self.segment_size, -1)  # B, N, L, K
+        output = output.view(batch_size , self.feature_dim, self.segment_size, -1)  # B*topk, N, L, K
 
         # print('output shape',output.shape)
         # overlap-and-add of the outputs
-        output = self.merge_feature(output, enc_rest)  # B, N, L
+        output = self.merge_feature(output, enc_rest)  # B*topk, N, L
         # print('output shape',output.shape)
-        output = output.unsqueeze(1).expand(-1,topk,-1,-1) # B,topk,N,L
+        # output = output.unsqueeze(1).expand(-1,topk,-1,-1) # B,topk,N,L
         # print('output shape',output.shape)
-        voiceP= voiceP.unsqueeze(-1).expand(batch_size, topk, D, seq_length)  #B,topk,D,L
+        # voiceP= voiceP.unsqueeze(-1).expand(batch_size, topk, D, seq_length)  #B,topk,D,L
         # print('output shape',output.shape)
         # print('voiceP shape',voiceP.shape)
 
         #END cat mode
-        output= torch.cat((output,voiceP), dim=2).view(-1, N + D, seq_length)  # [B*topk,(N+D),L]
-        del voiceP
+        # output= torch.cat((output,voiceP), dim=2).view(-1, N + D, seq_length)  # [B*topk,(N+D),L]
+        # del voiceP
 
         # gated output layer for filter generation
         bf_filter = self.output(output) * self.output_gate(output)  # B*nspk, K, L
@@ -375,11 +372,11 @@ class BF_module(DPRNN_base):
 
 
 # base module for FaSNet
-class FaSNet_base(nn.Module):
+class FaSNet_base_2nd(nn.Module):
     # def __init__(self, enc_dim, feature_dim, hidden_dim, layer, segment_size=250,
     #              nspk=2, win_len=2):
     def __init__(self, config, enc_dim = 256, feature_dim = 64, hidden_dim = 128, layer = 6, segment_size = 250, nspk = 2, win_len = 2):
-        super(FaSNet_base, self).__init__()
+        super(FaSNet_base_2nd, self).__init__()
 
         # parameters
         self.config=config
@@ -397,8 +394,8 @@ class FaSNet_base(nn.Module):
 
         # waveform encoder
         #self.encoder = nn.Conv1d(1, self.enc_dim, self.feature_dim, bias=False)
-        self.encoder = Encoder(win_len, enc_dim) # [B T]-->[B N L]
-        self.enc_LN = nn.GroupNorm(1, self.enc_dim, eps=1e-8) # [B N L]-->[B N L]
+        self.encoder = Encoder(win_len, enc_dim) # [B T]-->[B*topk N L]
+        self.enc_LN = nn.GroupNorm(1, self.enc_dim, eps=1e-8) # [B*topk N L]-->[B*topk N L]
         self.separator = BF_module(self.enc_dim, self.feature_dim, self.hidden_dim,
                                 self.num_spk, self.layer, self.segment_size)
         # [B, N, L] -> [B, E, L]
@@ -424,22 +421,23 @@ class FaSNet_base(nn.Module):
 
         return input, rest
 
-    def forward(self, input, voiceP):
+    def forward(self, input, first_stage_mask):
         """
         input: shape (batch, T)
-        voiceP: batch,topk,spk_emb
+        first_stage_mask: batch,topk, T
         """
         # pass to a DPRNN
         #input = input.to(device)
-        self.num_spk = voiceP.size(1)
+        topk = first_stage_mask.shape[1]
+        self.num_spk =first_stage_mask.size(1)
         B, _ = input.size()
         # mixture, rest = self.pad_input(input, self.window)
         #print('mixture.shape {}'.format(mixture.shape))
-        mixture_w = self.encoder(input)  # B, E, L
+        mixture_w = self.encoder(input,first_stage_mask)  # B*topk, E, L
 
-        score_ = self.enc_LN(mixture_w) # B, E, L
+        score_ = self.enc_LN(mixture_w) # B*topk, E, L
         #print('mixture_w.shape {}'.format(mixture_w.shape))
-        score_ = self.separator(score_, voiceP)  # B*nspk, N, L
+        score_ = self.separator(score_,topk)  # B*nspk, N, L
         # print('score_.shape {}'.format(score_.shape))
         # score_ = score_.view(B*self.num_spk, -1, self.feature_dim).transpose(1, 2).contiguous()  # B*nspk, N, T
         #print('score_.shape {}'.format(score_.shape))
@@ -448,13 +446,13 @@ class FaSNet_base(nn.Module):
 
         score = self.mask_conv1x1(score_)  # [B*nspk, N, L] -> [B*nspk, E, L]
         # print('score.shape {}'.format(score.shape))
-        score = score.view(B, self.num_spk, self.enc_dim, -1)  # [B*nspk, E, L] -> [B, nspk, E, L]
+        # score = score.view(B, self.num_spk, self.enc_dim, -1)  # [B*nspk, E, L] -> [B, nspk, E, L]
         # print('score.shape {}'.format(score.shape))
         est_mask = F.relu(score)
 
         # est_mask = voiceP.unsqueeze(1).transpose(2,3) * est_mask # bs*steps*d * bs*spk*d*steps
 
-        est_source = self.decoder(mixture_w, est_mask) # [B, E, L] + [B, nspk, E, L]--> [B, nspk, T]
+        est_source = self.decoder(mixture_w, est_mask,topk) # [B*topk, E, L] + [B*nspk, E, L]--> [B, nspk, T]
         # print('final.shape {}'.format(est_source.shape))
 
         # if rest > 0:

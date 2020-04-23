@@ -44,6 +44,12 @@ class seq2seq(nn.Module):
                 self.ss_model = models.FaSNet_base(config)
                 if self.config.two_stage:
                     self.second_ss_model = models.FaSNet_base_2nd(config)
+                    for p in self.encoder.parameters():
+                        p.requires_grad = False
+                    for p in self.decoder.parameters():
+                        p.requires_grad = False
+                    for p in self.ss_model.parameters():
+                        p.requires_grad = False
             else:
                 self.ss_model = models.ConvTasNet(config)
                 if self.config.two_stage:
