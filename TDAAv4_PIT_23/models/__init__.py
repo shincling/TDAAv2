@@ -4,6 +4,7 @@ from models.seq2seq import *
 from models.separation_dis import *
 from models.separation_tasnet import *
 from models.separation_dprnn import *
+from models.separation_dprnn_2stage import *
 from models.separation_tasnet_2stage import *
 from models.loss import *
 from models.beam import *

@@ -368,7 +368,7 @@ class TransDecoder(nn.Module):
         pred, gold = seq_logit, ys_out_pad
 
         if return_attns:
-            return pred, gold, dec_output, dec_output_input, dec_slf_attn_list, dec_enc_attn_list[-1].view(self.n_head,-1,gold.size(1),751)
+            return pred, gold, dec_output, dec_output_input, dec_slf_attn_list, dec_enc_attn_list[-1].view(self.n_head,-1,gold.size(1),encoder_input_lengths[0])
         return pred, gold, dec_output, dec_output_input
 
     def compute_score(self, hiddens,targets):
