@@ -242,7 +242,7 @@ class DPRNN(nn.Module):
 
 # base module for deep DPRNN
 class DPRNN_base(nn.Module):
-    def __init__(self, input_dim, feature_dim, hidden_dim, num_spk=2,
+    def __init__(self, input_dim, feature_dim, hidden_dim, num_spk=1,
                  layer=4, segment_size=100, bidirectional=True, rnn_type='LSTM'):
         super(DPRNN_base, self).__init__()
 
@@ -319,35 +319,57 @@ class BF_module(DPRNN_base):
         super(BF_module, self).__init__(*args, **kwargs)
 
         # gated output layer
-        self.output = nn.Sequential(nn.Conv1d(self.feature_dim, self.feature_dim, 1),
+        # self.output = nn.Sequential(nn.Conv1d(self.feature_dim, self.feature_dim, 1),
+        #                             nn.Tanh()
+        #                             )
+        # self.output_gate = nn.Sequential(nn.Conv1d(self.feature_dim, self.feature_dim, 1),
+        #                                  nn.Sigmoid()
+        #                                  )
+        self.output = nn.Sequential(nn.Conv1d(self.feature_dim+512, self.feature_dim, 1),
                                     nn.Tanh()
                                     )
-        self.output_gate = nn.Sequential(nn.Conv1d(self.feature_dim, self.feature_dim, 1),
+        self.output_gate = nn.Sequential(nn.Conv1d(self.feature_dim+512, self.feature_dim, 1),
                                          nn.Sigmoid()
                                          )
 
     def forward(self, input, voiceP):
         #input = input.to(device)
         # input: (B, E, T)
+        # voiceP: (BS,topk,D)
         batch_size, E, seq_length = input.shape
+        _, topk, D = voiceP.size()
+        assert batch_size==_
+        self.num_spk=topk
 
         enc_feature = self.BN(input) # (B, E, L)-->(B, N, L)
+        N = enc_feature.shape[1]
         # split the encoder output into overlapped, longer segments
         enc_segments, enc_rest = self.split_feature(enc_feature, self.segment_size)  # B, N, L, K: L is the segment_size
         #print('enc_segments.shape {}'.format(enc_segments.shape))
+        # print('output shape',enc_segments.shape)
         # pass to DPRNN
-        output = self.DPRNN(enc_segments).view(batch_size * self.num_spk, self.feature_dim, self.segment_size,
-                                                   -1)  # B*nspk, N, L, K
+        output = self.DPRNN(enc_segments)
+        # print('output shape',output.shape)
+        output = output.view(batch_size , self.feature_dim, self.segment_size, -1)  # B, N, L, K
 
+        # print('output shape',output.shape)
         # overlap-and-add of the outputs
-        output = self.merge_feature(output, enc_rest)  # B*nspk, N, T
+        output = self.merge_feature(output, enc_rest)  # B, N, L
+        # print('output shape',output.shape)
+        output = output.unsqueeze(1).expand(-1,topk,-1,-1) # B,topk,N,L
+        # print('output shape',output.shape)
+        voiceP= voiceP.unsqueeze(-1).expand(batch_size, topk, D, seq_length)  #B,topk,D,L
+        # print('output shape',output.shape)
+        # print('voiceP shape',voiceP.shape)
 
-        output = voiceP.transpose(1,2) * output # bs*steps*d * bs*spk*d*steps
+        #END cat mode
+        output= torch.cat((output,voiceP), dim=2).view(-1, N + D, seq_length)  # [B*topk,(N+D),L]
+        del voiceP
 
         # gated output layer for filter generation
-        bf_filter = self.output(output) * self.output_gate(output)  # B*nspk, K, T
-        bf_filter = bf_filter.transpose(1, 2).contiguous().view(batch_size, self.num_spk, -1,
-                                                                self.feature_dim)  # B, nspk, T, N
+        bf_filter = self.output(output) * self.output_gate(output)  # B*nspk, K, L
+                                                                # self.feature_dim)  # B, nspk, L, N
+        # bf_filter = output
 
         return bf_filter
 
@@ -356,7 +378,7 @@ class BF_module(DPRNN_base):
 class FaSNet_base(nn.Module):
     # def __init__(self, enc_dim, feature_dim, hidden_dim, layer, segment_size=250,
     #              nspk=2, win_len=2):
-    def __init__(self, config, enc_dim = 256, feature_dim = 64, hidden_dim = 128, layer = 6, segment_size = 250, nspk = 1, win_len = 2):
+    def __init__(self, config, enc_dim = 256, feature_dim = 64, hidden_dim = 128, layer = 6, segment_size = 250, nspk = 2, win_len = 2):
         super(FaSNet_base, self).__init__()
 
         # parameters
@@ -370,7 +392,7 @@ class FaSNet_base(nn.Module):
         self.segment_size = segment_size # 250
 
         self.layer = layer # 6
-        self.num_spk = nspk # 2
+        self.num_spk = 1 # 2
         self.eps = 1e-8
 
         # waveform encoder
@@ -381,6 +403,8 @@ class FaSNet_base(nn.Module):
                                 self.num_spk, self.layer, self.segment_size)
         # [B, N, L] -> [B, E, L]
         self.mask_conv1x1 = nn.Conv1d(self.feature_dim, self.enc_dim, 1, bias=False)
+        # self.mask_conv1x1 = nn.Conv1d(self.feature_dim + 512, self.enc_dim, 1, bias=False)
+        # self.mask_conv1x1 = nn.Conv1d(self.feature_dim + 64, self.enc_dim, 1, bias=False)
         self.decoder = Decoder(enc_dim, win_len)
 
     def pad_input(self, input, window):
@@ -403,9 +427,11 @@ class FaSNet_base(nn.Module):
     def forward(self, input, voiceP):
         """
         input: shape (batch, T)
+        voiceP: batch,topk,spk_emb
         """
         # pass to a DPRNN
         #input = input.to(device)
+        self.num_spk = voiceP.size(1)
         B, _ = input.size()
         # mixture, rest = self.pad_input(input, self.window)
         #print('mixture.shape {}'.format(mixture.shape))
@@ -413,22 +439,23 @@ class FaSNet_base(nn.Module):
 
         score_ = self.enc_LN(mixture_w) # B, E, L
         #print('mixture_w.shape {}'.format(mixture_w.shape))
-        score_ = self.separator(score_, voiceP)  # B, nspk, T, N
-        #print('score_.shape {}'.format(score_.shape))
-        score_ = score_.view(B*self.num_spk, -1, self.feature_dim).transpose(1, 2).contiguous()  # B*nspk, N, T
+        score_ = self.separator(score_, voiceP)  # B*nspk, N, L
+        # print('score_.shape {}'.format(score_.shape))
+        # score_ = score_.view(B*self.num_spk, -1, self.feature_dim).transpose(1, 2).contiguous()  # B*nspk, N, T
         #print('score_.shape {}'.format(score_.shape))
         
         # score_ = voiceP.transpose(1,2) * score_ # bs*steps*d * bs*spk*d*steps
 
         score = self.mask_conv1x1(score_)  # [B*nspk, N, L] -> [B*nspk, E, L]
-        #print('score.shape {}'.format(score.shape))
+        # print('score.shape {}'.format(score.shape))
         score = score.view(B, self.num_spk, self.enc_dim, -1)  # [B*nspk, E, L] -> [B, nspk, E, L]
-        #print('score.shape {}'.format(score.shape))
+        # print('score.shape {}'.format(score.shape))
         est_mask = F.relu(score)
 
         # est_mask = voiceP.unsqueeze(1).transpose(2,3) * est_mask # bs*steps*d * bs*spk*d*steps
 
         est_source = self.decoder(mixture_w, est_mask) # [B, E, L] + [B, nspk, E, L]--> [B, nspk, T]
+        # print('final.shape {}'.format(est_source.shape))
 
         # if rest > 0:
         #     est_source = est_source[:, :, :-rest]
