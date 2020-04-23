@@ -29,11 +29,13 @@ parser = argparse.ArgumentParser(description='train_WSJ0.py')
 
 parser.add_argument('-config', default='config_WSJ0.yaml', type=str,
                     help="config file")
-parser.add_argument('-gpus', default=range(4), nargs='+', type=int,
-# parser.add_argument('-gpus', default=[2,3], nargs='+', type=int,
+# parser.add_argument('-gpus', default=range(4), nargs='+', type=int,
+parser.add_argument('-gpus', default=[2,3], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
-parser.add_argument('-restore', default='TDAAv3_PIT_408001.pt', type=str, # from the v1 2&3 end separtion mode
+# parser.add_argument('-restore', default='TDAAv3_PIT_408001.pt', type=str, # from the v1 2&3 end separtion mode
+# parser.add_argument('-restore', default='TDAAv3_PIT_tmp_2stage.pt', type=str, # from the v1 2&3 end separtion mode
 # parser.add_argument('-restore', default='data/data/log/2020-02-20-11:50:36/TDAAv3_PIT_420001.pt', type=str,
+parser.add_argument('-restore', default='TDAAv4_dprnn_224001.pt', type=str, # from the v1 2&3 end separtion mode
 # parser.add_argument('-restore', default=None, type=str,
                     help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
@@ -120,6 +122,7 @@ else:
                   lr_decay=config.learning_rate_decay, start_decay_at=config.start_decay_at)
 
 optim.set_parameters(list(model.module.second_ss_model.parameters()))
+# optim.set_parameters(list(model.parameters()))
 
 if config.schedule:
     # scheduler = L.CosineAnnealingLR(optim.optimizer, T_max=config.epoch)
@@ -509,25 +512,14 @@ def eval(epoch):
             if config.WFM:
                 WFM_mask = WFM_mask.cuda()
 
+
         if 1 and len(opt.gpus) > 1:
-            outputs, pred,targets, multi_mask, dec_enc_attn_list = model(src, src_len, tgt, tgt_len, dict_spk2idx, None,
+            outputs, pred,targets, multi_mask, dec_enc_attn_list, multi_mask_2nd = model(src, src_len, tgt, tgt_len, dict_spk2idx, None,
                                                                     mix_wav=padded_mixture)  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
         else:
-            outputs, pred,targets, multi_mask, dec_enc_attn_list = model(src, src_len, tgt, tgt_len, dict_spk2idx, None,
+            outputs, pred,targets, multi_mask, dec_enc_attn_list, multi_mask_2nd = model(src, src_len, tgt, tgt_len, dict_spk2idx, None,
                                                                     mix_wav=padded_mixture)  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
         samples=list(pred.view(config.batch_size,top_k+1,-1).max(2)[1].data.cpu().numpy())
-        '''
-
-        if 1 and len(opt.gpus) > 1:
-            samples,  predicted_masks = model.module.beam_sample(src, src_len, dict_spk2idx, tgt, config.beam_size,None,padded_mixture)
-        else:
-            samples,  predicted_masks = model.beam_sample(src, src_len, dict_spk2idx, tgt, config.beam_size, None, padded_mixture)
-            multi_mask = predicted_masks
-            samples=[samples]
-        # except:
-        #     continue
-
-        # '''
         # expand the raw mixed-features to topk_max channel.
         src = src.transpose(0, 1)
         siz = src.size()
@@ -536,42 +528,56 @@ def eval(epoch):
         #     print '*'*40+'\nThe model is far from good. End the evaluation.\n'+'*'*40
         #     break
         topk_max = top_k
-        x_input_map_multi = torch.unsqueeze(src, 1).expand(siz[0], topk_max, siz[1], siz[2])
+        # x_input_map_multi = torch.unsqueeze(src, 1).expand(siz[0], topk_max, siz[1], siz[2])
+        del src,tgt,tgt_len
         multi_mask = multi_mask.transpose(0, 1)
+        multi_mask_2nd = multi_mask_2nd.transpose(0, 1)
 
         if test_or_valid != 'test':
-            if config.use_tas:
-                if 1 and len(opt.gpus) > 1:
-                    ss_loss, pmt_list, max_snr_idx, *__ = model.module.separation_tas_loss(padded_mixture, multi_mask, padded_source, mixture_lengths)
-                else:
-                    ss_loss, pmt_list, max_snr_idx, *__ = model.separation_tas_loss(padded_mixture, multi_mask, padded_source, mixture_lengths)
+            if 1 and len(opt.gpus) > 1:
+                ss_loss_1st, pmt_list, max_snr_idx,*__ = model.module.separation_tas_loss(padded_mixture, multi_mask,padded_source,mixture_lengths)
+            else:
+                ss_loss_1st, pmt_list, max_snr_idx, *__= model.separation_tas_loss(padded_mixture, multi_mask, padded_source,mixture_lengths)
+            best_pmt=[list(pmt_list[int(mm)].data.cpu().numpy()) for mm in max_snr_idx]
+            print('loss for SS stage1,this batch:', ss_loss_1st.cpu().item())
+            print('best perms for this batch:', best_pmt)
+            writer.add_scalars('scalar/loss',{'ss_loss_2nd':ss_loss_1st.cpu().item()},updates)
+
+            if 1 and len(opt.gpus) > 1:
+                ss_loss, pmt_list, max_snr_idx,*__ = model.module.separation_tas_loss(padded_mixture, multi_mask_2nd,padded_source,mixture_lengths)
+            else:
+                ss_loss, pmt_list, max_snr_idx, *__= model.separation_tas_loss(padded_mixture, multi_mask_2nd, padded_source,mixture_lengths)
+            best_pmt=[list(pmt_list[int(mm)].data.cpu().numpy()) for mm in max_snr_idx]
+            print('loss for SS stage2,this batch:', ss_loss.cpu().item())
+            print('best perms for this batch:', best_pmt)
+            writer.add_scalars('scalar/loss',{'ss_loss_2nd':ss_loss.cpu().item()},updates)
             print(('loss for ss,this batch:', ss_loss.cpu().item()))
             lera.log({
-                'ss_loss_' + test_or_valid: ss_loss.cpu().item(),
+                'ss_loss_2stage_' + test_or_valid: ss_loss_1st.cpu().item(),
+                'ss_loss_1stage_' + test_or_valid: ss_loss.cpu().item(),
             })
-            del ss_loss
+            del ss_loss,ss_loss_1st
 
         # '''''
         if 1 and batch_idx <= (500 / config.batch_size):  # only the former batches counts the SDR
-            utils.bss_eval_tas(config, multi_mask, eval_data['multi_spk_fea_list'], raw_tgt, eval_data,
-                               dst=log_path+'batch_output/')
-            del multi_mask, x_input_map_multi
-            try:
-                sdr_aver_batch, sdri_aver_batch=  bss_test.cal(log_path+'batch_output/')
-                SDR_SUM = np.append(SDR_SUM, sdr_aver_batch)
-                SDRi_SUM = np.append(SDRi_SUM, sdri_aver_batch)
-            except(AssertionError):
-                print('Errors in calculating the SDR')
+            utils.bss_eval_tas(config, multi_mask, eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst=log_path+'batch_output1')
+            print('\n Stage 1:')
+            sdr_aver_batch, sdri_aver_batch = bss_test.cal(log_path+'batch_output1/')
+            lera.log({'SDR sample 1st': sdr_aver_batch})
+            lera.log({'SDRi sample 1st': sdri_aver_batch})
+            print('\n Stage 2:')
+            utils.bss_eval_tas(config, multi_mask_2nd, eval_data['multi_spk_fea_list'], raw_tgt, eval_data, dst=log_path+'batch_output1')
+            sdr_aver_batch, sdri_aver_batch = bss_test.cal(log_path+'batch_output1/')
+            lera.log({'SDR sample 2nd': sdr_aver_batch})
+            lera.log({'SDRi sample 2nd': sdri_aver_batch})
+            writer.add_scalars('scalar/loss',{'SDR_sample':sdr_aver_batch,'SDRi_sample':sdri_aver_batch},updates)
+            SDR_SUM = np.append(SDR_SUM, sdr_aver_batch)
+            SDRi_SUM = np.append(SDRi_SUM, sdri_aver_batch)
             print(('SDR_aver_now:', SDR_SUM.mean()))
             print(('SDRi_aver_now:', SDRi_SUM.mean()))
-            lera.log({'SDR sample'+test_or_valid: SDR_SUM.mean()})
-            lera.log({'SDRi sample'+test_or_valid: SDRi_SUM.mean()})
-            writer.add_scalars('scalar/loss',{'SDR_sample_'+test_or_valid:sdr_aver_batch},updates)
             # raw_input('Press any key to continue......')
-        elif batch_idx == (200 / config.batch_size) + 1 and SDR_SUM.mean() > best_SDR:  # only record the best SDR once.
-            print(('Best SDR from {}---->{}'.format(best_SDR, SDR_SUM.mean())))
-            best_SDR = SDR_SUM.mean()
-            # save_model(log_path+'checkpoint_bestSDR{}.pt'.format(best_SDR))
+
+        del outputs, pred,targets, multi_mask, dec_enc_attn_list, multi_mask_2nd
         '''
         import matplotlib.pyplot as plt
         ax = plt.gca()
