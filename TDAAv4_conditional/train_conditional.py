@@ -29,15 +29,16 @@ parser = argparse.ArgumentParser(description='train_WSJ0.py')
 
 parser.add_argument('-config', default='config_WSJ0.yaml', type=str,
                     help="config file")
-# parser.add_argument('-gpus', default=range(4), nargs='+', type=int,
-parser.add_argument('-gpus', default=[3], nargs='+', type=int,
+parser.add_argument('-gpus', default=range(4), nargs='+', type=int,
+# parser.add_argument('-gpus', default=[1,2,3], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
 # parser.add_argument('-restore', default='data/data/log/2020-03-16-13:31:46/TDAAv3_conditional_tmp.pt', type=str,
 # parser.add_argument('-restore', default='data/data/log/2020-03-17-09:29:39/TDAAv4_conditional_18001.pt', type=str,
 # parser.add_argument('-restore', default='data/data/log/2020-03-18-04:34:52/TDAAv4_conditional_tmp.pt', type=str,
 # parser.add_argument('-restore', default='data/data/log/2020-03-20-02:06:33/TDAAv4_conditional_601.pt', type=str,
 # parser.add_argument('-restore', default='TDAAv4_conditional_tmp03.pt', type=str,
-parser.add_argument('-restore', default='data/data/log/2020-04-03-08:50:07/TDAAv4_conditional_tmp.pt', type=str,
+# parser.add_argument('-restore', default='data/data/log/2020-04-03-08:50:07/TDAAv4_conditional_tmp.pt', type=str,
+parser.add_argument('-restore', default='TDAAv4_conditional_tmp23.pt', type=str,
 # parser.add_argument('-restore', default=None, type=str,
                     help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
@@ -46,7 +47,7 @@ parser.add_argument('-model', default='seq2seq', type=str,
                     help="Model selection")
 parser.add_argument('-score', default='', type=str,
                     help="score_fn")
-parser.add_argument('-notrain', default=1, type=bool,
+parser.add_argument('-notrain', default=0, type=bool,
                     help="train or not")
 parser.add_argument('-log', default='', type=str,
                     help="log directory")
@@ -126,7 +127,7 @@ optim.set_parameters(list(model.parameters()))
 
 if config.schedule:
     # scheduler = L.CosineAnnealingLR(optim.optimizer, T_max=config.epoch)
-    scheduler = L.StepLR(optim.optimizer, step_size=10, gamma=0.8)
+    scheduler = L.StepLR(optim.optimizer, step_size=2, gamma=0.8)
 
 # total number of parameters
 param_count = 0
@@ -338,9 +339,21 @@ def train(epoch):
         assert len(siz) == 3
         topk_max = topk_this_batch  # 最多可能的topk个数
         x_input_map_multi = torch.unsqueeze(src, 1).expand(siz[0], topk_max, siz[1], siz[2]).contiguous()#.view(-1, siz[1], siz[2])
-        # x_input_map_multi = x_input_map_multi[aim_list]
-        # if config.WFM:
-        #     feas_tgt = x_input_map_multi.data * WFM_mask
+
+        if config.greddy_tf and config.add_last_silence:
+            multi_mask, silence_channel = torch.split(multi_mask,[topk_this_batch,1],dim=1)
+            silence_channel = silence_channel[:,0]
+            assert len(padded_source.shape)==3
+            # padded_source = torch.cat([padded_source,torch.zeros(padded_source.size(0),1,padded_source.size(2))],1)
+            if 1 and len(opt.gpus) > 1:
+                ss_loss_silence = model.module.silence_loss(silence_channel)
+            else:
+                ss_loss_silence = model.silence_loss(silence_channel)
+            print('loss for SS silence,this batch:', ss_loss_silence.cpu().item())
+            writer.add_scalars('scalar/loss',{'ss_loss_silence':ss_loss_silence.cpu().item()},updates)
+            lera.log({'ss_loss_silence': ss_loss_silence.cpu().item()})
+            if torch.isnan(ss_loss_silence):
+                ss_loss_silence = 0
 
         if config.use_tas:
             # print('source',padded_source)
@@ -362,13 +375,14 @@ def train(epoch):
         writer.add_scalars('scalar/loss',{'ss_loss':ss_loss.cpu().item()},updates)
 
         loss = ss_loss
-
+        if config.add_last_silence:
+            loss = loss + 0.1 * ss_loss_silence
         loss.backward()
 
         # print 'totallllllllllll loss:',loss
         total_loss_ss += ss_loss.cpu().item()
         lera.log({
-            'ss_loss': ss_loss.cpu().item(),
+            'ss_loss_'+str(topk_this_batch): ss_loss.cpu().item(),
             'loss:': loss.cpu().item(),
         })
 
@@ -441,8 +455,8 @@ def eval(epoch):
     model.eval()
     config.greddy_tf=0
     config.pit_without_tf=1
-    model.config.greddy_tf=0
-    model.config.pit_without_tf=1
+    # model.config.greddy_tf=0
+    # model.config.pit_without_tf=1
     # print '\n\n测试的时候请设置config里的batch_size为1！！！please set the batch_size as 1'
     reference, candidate, source, alignments = [], [], [], []
     e = epoch
@@ -476,7 +490,6 @@ def eval(epoch):
         tgt = Variable(torch.from_numpy(np.array([list(range(top_k+1))+[102] for __ in range(config.batch_size)], dtype=np.int))).transpose(0, 1)  # 转换成数字，然后前后加开始和结束符号。
 
         padded_mixture, mixture_lengths, padded_source = eval_data['tas_zip']
-        padded_mixture = padded_source[:,0]
         padded_mixture=torch.from_numpy(padded_mixture).float()
         mixture_lengths=torch.from_numpy(mixture_lengths)
         padded_source=torch.from_numpy(padded_source).float()
