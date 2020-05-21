@@ -32,16 +32,20 @@ class seq2seq(nn.Module):
         speech_fre = input_emb_size
         num_labels = tgt_vocab_size
         if config.use_tas:
-            self.ss_model = models.ConvTasNet(config)
-            self.spk_lstm= nn.LSTMCell(self.ss_model.B+self.ss_model.N,self.ss_model.B) # LSTM over the speakers' step.
-            if self.config.two_stage:
-                self.second_ss_model = models.ConvTasNet_2nd(config)
-                for p in self.encoder.parameters():
-                    p.requires_grad = False
-                for p in self.decoder.parameters():
-                    p.requires_grad = False
-                for p in self.ss_model.parameters():
-                    p.requires_grad = False
+            if self.config.use_dprnn:
+                self.ss_model = models.FaSNet_base(config)
+                self.spk_lstm = nn.LSTMCell(self.ss_model.B + self.ss_model.N, self.ss_model.B)  # LSTM over the speakers' step.
+            else:
+                self.ss_model = models.ConvTasNet(config)
+                if self.config.two_stage:
+                    self.second_ss_model = models.ConvTasNet_2nd(config)
+                    for p in self.encoder.parameters():
+                        p.requires_grad = False
+                    for p in self.decoder.parameters():
+                        p.requires_grad = False
+                    for p in self.ss_model.parameters():
+                        p.requires_grad = False
+                self.spk_lstm = nn.LSTMCell(self.ss_model.B + self.ss_model.N, self.ss_model.B)  # LSTM over the speakers' step.
         else:
             # self.ss_model = models.SS_att(config, speech_fre, mix_speech_len, num_labels)
             self.ss_model = models.SS(config, speech_fre, mix_speech_len, num_labels)
@@ -476,6 +480,227 @@ class seq2seq(nn.Module):
             predicted_maps = predicted_maps[:,0:1] #bs,1,len
         return allHyps, allAttn, allHiddens, predicted_maps  # .transpose(0,1)
 
+class seq2seq_music(nn.Module):
+
+    def __init__(self, config, input_emb_size, mix_speech_len, tgt_vocab_size, use_cuda, pretrain=None, score_fn=''):
+        super(seq2seq_music, self).__init__()
+        if pretrain is not None:
+            src_embedding = pretrain['src_emb']
+            tgt_embedding = pretrain['tgt_emb']
+        else:
+            src_embedding = None
+            tgt_embedding = None
+        self.use_cuda = use_cuda
+        self.tgt_vocab_size = tgt_vocab_size
+        self.config = config
+        self.criterion = models.criterion(tgt_vocab_size, use_cuda,config.loss)
+        self.loss_for_ss = nn.MSELoss()
+        self.log_softmax = nn.LogSoftmax()
+        self.wav_loss = models.WaveLoss(dBscale=1, nfft=config.FRAME_LENGTH, hop_size=config.FRAME_SHIFT)
+
+        speech_fre = input_emb_size
+        num_labels = tgt_vocab_size
+        if config.use_tas:
+            if self.config.use_dprnn:
+                self.ss_model = models.FaSNet_base(config)
+                self.spk_lstm = nn.LSTMCell(self.ss_model.B + self.ss_model.N, self.ss_model.B)  # LSTM over the speakers' step.
+            else:
+                self.ss_model = models.ConvTasNet_music(config)
+                if self.config.two_stage:
+                    self.second_ss_model = models.ConvTasNet_2nd(config)
+                    for p in self.encoder.parameters():
+                        p.requires_grad = False
+                    for p in self.decoder.parameters():
+                        p.requires_grad = False
+                    for p in self.ss_model.parameters():
+                        p.requires_grad = False
+                self.spk_lstm = nn.LSTMCell(self.ss_model.B + self.ss_model.N, self.ss_model.B)  # LSTM over the speakers' step.
+        else:
+            # self.ss_model = models.SS_att(config, speech_fre, mix_speech_len, num_labels)
+            self.ss_model = models.SS(config, speech_fre, mix_speech_len, num_labels)
+
+    def compute_loss(self, hidden_outputs, targets, memory_efficiency):
+        if 1:
+            return models.cal_performance(hidden_outputs, self.decoder, targets, self.criterion, self.config)
+
+    def separation_loss(self, x_input_map_multi, masks, y_multi_map, Var='NoItem'):
+        if not self.config.MLMSE:
+            return models.ss_loss(self.config, x_input_map_multi, masks, y_multi_map, self.loss_for_ss,self.wav_loss)
+        else:
+            return models.ss_loss_MLMSE(self.config, x_input_map_multi, masks, y_multi_map, self.loss_for_ss, Var)
+
+    def silence_loss(self,  est_mask):
+        # est: bs, T
+        square = est_mask*est_mask #bs,T
+        sum = torch.sum(square,1) #bs
+        # dist = -10 * torch.log10(sum)
+        dist = sum
+        return torch.mean(dist)/est_mask.size(0)
+
+    def separation_pit_loss(self, x_input_map_multi, masks, y_multi_map):
+        return models.ss_pit_loss(self.config, x_input_map_multi, masks, y_multi_map, self.loss_for_ss,self.wav_loss)
+
+    def separation_tas_loss(self, x_input_wav_multi,predict_wav, y_multi_wav,mix_lengths):
+        return models.ss_tas_pit_loss(self.config, x_input_wav_multi,predict_wav, y_multi_wav, mix_lengths,self.loss_for_ss,self.wav_loss)
+
+    def separation_tas_sdr_order_loss(self, x_input_wav_multi,predict_wav, y_multi_wav,mix_lengths):
+        bs,topk,_,T=y_multi_wav.shape
+        predict_wav=predict_wav.view(bs,topk,-1)
+        y_multi_wav=y_multi_wav.view(bs,topk,-1)
+        mix_lengths=mix_lengths*2
+        return models.ss_tas_loss(self.config, x_input_wav_multi,predict_wav, y_multi_wav, mix_lengths,self.loss_for_ss,self.wav_loss)
+
+    def update_var(self, x_input_map_multi, multi_masks, y_multi_map):
+        predict_multi_map = torch.mean(multi_masks * x_input_map_multi, -2)  # 在时间维度上平均
+        y_multi_map = torch.mean(Variable(y_multi_map), -2)  # 在时间维度上平均
+        loss_vector = (y_multi_map - predict_multi_map).view(-1, self.config.speech_fre).unsqueeze(-1)  # 应该是bs*1*fre
+        Var = torch.bmm(loss_vector, loss_vector.transpose(1, 2))
+        Var = torch.mean(Var, 0)  # 在batch的维度上平均
+        return Var.detach()
+
+    def normalize(self,bs_vec):
+        return bs_vec/(torch.max(torch.abs(bs_vec),1)[0]).unsqueeze(1)
+
+    def choose_candidate(self, predicted_wav_this_step, clean_batch_dict, BS):
+        # predicted_wav: BS,2*T , clean_batch_dict: 长度为BS的列表，每个元素是dict，里面是序号对应的向量
+        # 每一步选出来一个最近的，然后将它从列表里删除去
+        spk_idx_list = []
+
+        cand_wavs_list = []
+        for idx in range(BS):
+            est_wav = predicted_wav_this_step[idx]  # 2*T
+            candidates_dict = clean_batch_dict[idx]  # dict topk,2,T
+            key_max = None
+            snr_max = None  # original key and dist
+            for key, cand_wav in candidates_dict.items():
+                # dist = F.mse_loss(torch.from_numpy(normalization_11(est_wav.data.cpu().numpy())),torch.from_numpy(normalization_11(cand_wav.data.cpu().numpy())))
+                # snr = models.cal_si_snr_with_order(cand_wav.view(1,1,-1), est_wav.view(1,1,-1), torch.ones([1]).int().cuda()*cand_wav.shape[-1])
+                snr = models.cal_sdr_with_order(cand_wav.view(1,1,-1), est_wav.view(1,1,-1), torch.ones([1]).int().cuda()*cand_wav.shape[-1])
+                if snr_max is None:
+                    snr_max = snr
+                    key_max = key
+                else:
+                    if snr > snr_max:
+                        snr_max = snr
+                        key_max = key
+            spk_idx_list.append(key_max)
+            cand_wavs_list.append(clean_batch_dict[idx][key_max].unsqueeze(0)) # list of 1,T
+            clean_batch_dict[idx].pop(key_max)  # 移除该元素
+
+        return cand_wavs_list, spk_idx_list, clean_batch_dict
+
+    def forward(self, src, src_len, tgt, tgt_len, dict_spk2idx,src_original=None,mix_wav=None,clean_wavs=None):
+        # 感觉这是个把一个batch里的数据按从长到短调整顺序的意思
+        # clean_wavs: topk,BS,T
+        # print(src.shape,src_original.shape)
+        if src_original is None:
+            src_original=src
+        if mix_wav is not None:
+            mix_wav=mix_wav.transpose(0,1)
+        if clean_wavs is not None:
+            clean_wavs=clean_wavs.transpose(0,1) # BS,topk,2,T
+            topk=clean_wavs.size(1)
+            clean_batch_dict=[]
+            for clean_wav in clean_wavs:
+                # topk,2,T
+                this_dict={idx:cand for idx,cand in enumerate(clean_wav)}
+                clean_batch_dict.append(this_dict)
+            # print(clean_batch_dict)
+
+        #  mixture: [BS, 2,T], 2 is two channels, M is batch
+        mixture_w = self.ss_model.encoder(mix_wav) # [BS*2,N, K],
+        mixture_encoder = self.ss_model.separator(mixture_w) # mixture_w: [BS, B, K], where K = (T - L) / (L / 2) + 1 = 2 T / L - 1
+        # expand to [BS*2,B,K]
+        mixture_encoder = mixture_encoder.unsqueeze(1).expand(-1,2,-1,-1).contiguous().view(-1,mixture_encoder.size(1),mixture_encoder.size(2))
+
+        # 注意这里是sep模块之后 还没加conv1x1的情况下
+
+        predicted_map_this_step = Variable(torch.zeros(mix_wav.shape)).to(mix_wav.device) # First step to use all ZEROs
+        y_map_this_step = predicted_map_this_step
+        condition_last_step = self.ss_model.encoder(y_map_this_step) # [BS*2,N, K], # use a conv1d to subsample the original wav to [BS,N,K]
+        N, B = self.ss_model.N, self.ss_model.B
+        BS, K = mix_wav.shape[0], mixture_w.shape[-1] # new lenght
+
+        predicted_maps = []
+        y_maps = []
+        spks_list= []
+        repeat_time=topk+1 if self.config.add_last_silence else topk
+        if self.config.pit_without_tf: # greddy mode w/o Teacher-Forcing
+            for step_idx in range(repeat_time):
+                cat_condition_this_step= torch.cat((mixture_encoder,condition_last_step),1) #BS*2,N,K --> BS*2,B+N,K
+                if step_idx==0:
+                    # BS,B+N,K --> BS,K,B+N ---> BS*K,B+N --> BS*K,B
+                    h_0,c_0=torch.zeros(2*BS*K, B).to(mix_wav.device),torch.zeros(2*BS*K, B).to(mix_wav.device)
+                    lstm_h,lstm_c = self.spk_lstm(cat_condition_this_step.transpose(1,2).contiguous().view(-1,B+N),(h_0,c_0))
+                    del h_0,c_0
+                else:
+                    # BS,B+N,K --> BS,K,B+N ---> BS*K,B+N --> BS*K,B (lstm_h)
+                    lstm_h, lstm_c = self.spk_lstm(cat_condition_this_step.transpose(1,2).contiguous().view(-1,B+N), (lstm_h,lstm_c))
+
+                predicted_map_this_step = self.ss_model.mask_conv1x1(lstm_h.view(-1,K,B).transpose(1,2)) # BS*K,B --> BS,K,B --->BS,B,K--->BS,2*N,K
+                predicted_map_this_step = F.relu(predicted_map_this_step).view(BS*2,N,K).unsqueeze(1) # BS*2,1,N,K
+                predicted_map_this_step = self.ss_model.decoder(mixture_w, predicted_map_this_step) # BS*2,1,T
+                T_origin =mix_wav.size(-1)
+                T_conv = predicted_map_this_step.size(-1)
+                predicted_map_this_step = F.pad(predicted_map_this_step, (0, T_origin - T_conv))
+
+                # update the condition
+                y_map_this_step = predicted_map_this_step.view(BS,T_origin)
+                condition_last_step = self.ss_model.encoder(y_map_this_step)  # use a conv1d to subsample the original wav to [BS,N,K]
+
+                predicted_maps.append(predicted_map_this_step.view(BS,1,T_origin)) # BS,1,T
+            predicted_maps = torch.cat(predicted_maps, 1)
+            return None, None, None, predicted_maps.transpose(0,1), None
+
+        elif self.config.greddy_tf:
+            assert clean_wavs is not None
+            for step_idx in range(repeat_time):
+                cat_condition_this_step= torch.cat((mixture_encoder,condition_last_step),1) #BS*2,N,K --> BS*2,B+N,K
+                if step_idx==0:
+                    # BS,B+N,K --> BS,K,B+N ---> BS*K,B+N --> BS*K,B
+                    h_0,c_0=torch.zeros(2*BS*K, B).to(mix_wav.device),torch.zeros(2*BS*K, B).to(mix_wav.device)
+                    lstm_h,lstm_c = self.spk_lstm(cat_condition_this_step.transpose(1,2).contiguous().view(-1,B+N),(h_0,c_0))
+                    del h_0,c_0
+                else:
+                    # BS*2,B+N,K --> BS*2,K,B+N ---> BS*2*K,B+N --> BS*2*K,B (lstm_h)
+                    lstm_h, lstm_c = self.spk_lstm(cat_condition_this_step.transpose(1,2).contiguous().view(-1,B+N), (lstm_h,lstm_c))
+
+                predicted_map_this_step = self.ss_model.mask_conv1x1(lstm_h.view(-1,K,B).transpose(1,2)) # BS*2*K,B --> BS*2,K,B --->BS*2,B,K--->BS*2,N,K
+                predicted_map_this_step = F.relu(predicted_map_this_step).view(BS*2,N,K).unsqueeze(1) # BS*2,1,N,K
+                predicted_map_this_step = self.ss_model.decoder(mixture_w, predicted_map_this_step) # BS*2,1,T
+                T_origin =mix_wav.size(-1)
+                T_conv = predicted_map_this_step.size(-1)
+                predicted_map_this_step = F.pad(predicted_map_this_step, (0, T_origin - T_conv))
+                predicted_maps.append(predicted_map_this_step.view(BS,1,2,T_origin)) # BS,1,2,T
+                if self.config.add_last_silence and step_idx==repeat_time-1: #如果是最后一个，后面就不用
+                    # y_maps.append(torch.zeros(1, BS, T_origin).to(mix_wav.device))  # step个1,BS,T
+                    continue
+
+                # update the condition
+                y_map_this_step,spk_idx_list_this_step, clean_batch_dict= self.choose_candidate(predicted_map_this_step.view(BS,2*T_origin),clean_batch_dict,BS)
+                print('spk list:',step_idx,spk_idx_list_this_step)
+                # print('pred :', step_idx, predicted_map_this_step)
+                # print('y wav:',y_map_this_step)
+                y_map_this_step = torch.cat(y_map_this_step,0) #BS,2,T
+                # training add some white noise
+                # condition_last_step = self.ss_model.encoder(self.normalize(y_map_this_step+0.3*torch.randn(y_map_this_step.shape).to(y_map_this_step.device)))  # use a conv1d to subsample the original wav to [BS,N,K]
+                condition_last_step = self.ss_model.encoder(y_map_this_step+0.1*torch.randn(y_map_this_step.shape).to(y_map_this_step.device))  # use a conv1d to subsample the original wav to [BS,N,K]
+                # condition_last_step = self.ss_model.encoder(self.normalize(y_map_this_step))  # use a conv1d to subsample the original wav to [BS,N,K]
+                # condition_last_step = self.ss_model.encoder(y_map_this_step)  # use a conv1d to subsample the original wav to [BS,N,K]
+                y_maps.append(y_map_this_step.view(1,BS,2,T_origin)) # step个1,BS,2,T
+                spks_list.append(spk_idx_list_this_step)
+
+        predicted_maps=torch.cat(predicted_maps,1) #BS,topk,2,T
+        y_maps=torch.cat(y_maps,0) # topk,BS,2,T
+        return None, None, torch.from_numpy(np.array(spks_list)).to(y_maps.device), predicted_maps.transpose(0,1), y_maps
+
+
+        if self.config.two_stage:
+            predicted_maps_2nd = self.second_ss_model(mix_wav,predicted_maps) # bs,T   bs,topk,T -->
+            return outputs.transpose(0, 1), pred, tgt[1:], predicted_maps.transpose(0, 1), \
+                   dec_enc_attn_list, predicted_maps_2nd.transpose( 0, 1)  # n_head*b,topk+1,T
+
+        return outputs.transpose(0,1), pred, tgt[1:], predicted_maps.transpose(0, 1), dec_enc_attn_list  #n_head*b,topk+1,T
 
 if __name__ == '__main__':
     model=seq2seq()

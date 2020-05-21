@@ -71,8 +71,8 @@ def remove_pad(inputs, inputs_lengths):
             results.append(input[:length].view(-1).cpu().numpy())
     return results
 
-class ConvTasNet(nn.Module):
-    def __init__(self, config, N=256, L=20, B=256, H=512, P=3, X=8, R=4, C=2, norm_type="gLN", causal=False,
+class ConvTasNet_music(nn.Module):
+    def __init__(self, config, N=512, L=20, B=512, H=512, P=3, X=10, R=4, C=2, norm_type="gLN", causal=False,
                  mask_nonlinear='relu'):
         """
         Args:
@@ -88,7 +88,7 @@ class ConvTasNet(nn.Module):
             causal: causal or non-causal
             mask_nonlinear: use which non-linear function to generate mask
         """
-        super(ConvTasNet, self).__init__()
+        super(ConvTasNet_music, self).__init__()
         # Hyper-parameter
         self.config = config
         self.N, self.L, self.B, self.H, self.P, self.X, self.R, self.C = N, L, B, H, P, X, R, C
@@ -176,12 +176,15 @@ class Encoder(nn.Module):
     def forward(self, mixture):
         """
         Args:
-            mixture: [M, T], M is batch size, T is #samples
+            mixture: [M, 2,T], M is batch size, 2 is the channel, T is #samples
         Returns:
-            mixture_w: [M, N, K], where K = (T-L)/(L/2)+1 = 2T/L-1
+            mixture_w: [2M, N, K], where K = (T-L)/(L/2)+1 = 2T/L-1
         """
-        mixture = torch.unsqueeze(mixture, 1)  # [M, 1, T]
-        mixture_w = F.relu(self.conv1d_U(mixture))  # [M, N, K]
+        # mixture = torch.unsqueeze(mixture, 1)  # [M, 1, T]
+        bs,n_channel,T=mixture.shape
+        assert len(mixture.shape)==3 and mixture.shape[1]==2
+        mixture = mixture.contiguous().view(bs*2,1,T) # [M*2, 1, T]
+        mixture_w = F.relu(self.conv1d_U(mixture))  # [M*2, N, K]
         return mixture_w
 
 
@@ -209,6 +212,14 @@ class Decoder(nn.Module):
         est_source = overlap_and_add(est_source, self.L//2) # M x C x T
         return est_source
 
+class Reshape(nn.Module):
+    def __init__(self, *args):
+        super(Reshape, self).__init__()
+        self.shape = args
+
+    def forward(self, x):
+        # x: [M*2,N,K] -- > [M,2*N,K]
+        return x.view(-1,2*x.shape[1],x.shape[2])
 
 class TemporalConvNet(nn.Module):
     def __init__(self, config, N, B, H, P, X, R, C, norm_type="gLN", causal=False,
@@ -234,10 +245,11 @@ class TemporalConvNet(nn.Module):
         self.mask_nonlinear = mask_nonlinear
         if config.end_separation_mode:
             # Components
-            # [M, N, K] -> [M, N, K]
+            # [M*2, N, K] -> [M*2, N, K]
             layer_norm = ChannelwiseLayerNorm(N)
-            # [M, N, K] -> [M, B, K]
-            bottleneck_conv1x1 = nn.Conv1d(N, B, 1, bias=False)
+            # [M*2, N, K] -> [M, 2*N, K]
+            layer_reshape= Reshape()
+            bottleneck_conv1x1 = nn.Conv1d(N*2, B, 1, bias=False) #从这里，两个通道合并，给后面
             # [M, B, K] -> [M, B, K]
             repeats = []
             for r in range(R):
@@ -253,9 +265,10 @@ class TemporalConvNet(nn.Module):
                 repeats += [nn.Sequential(*blocks)]
             temporal_conv_net = nn.Sequential(*repeats)
             # [M, B, K] -> [M, N, K]
-            self.mask_conv1x1 = nn.Conv1d(B, N, 1, bias=False)
+            self.mask_conv1x1 = nn.Conv1d(B, 2*N, 1, bias=False) #这里应该是恢复两个通道出来
             # Put together
             self.network = nn.Sequential(layer_norm,
+                                         layer_reshape,
                                          bottleneck_conv1x1,
                                          temporal_conv_net,)
                                          # mask_conv1x1)
@@ -264,15 +277,15 @@ class TemporalConvNet(nn.Module):
         """
         Keep this API same with TasNet
         Args:
-            mixture_w: [M, N, K], M is batch size
+            mixture_w: [2*M, N, K], M is batch size
             hidden_outputs: [M, C, D]
         returns:
             est_mask: [M, C, N, K]
         """
         B = self.B
-        M, N, K = mixture_w.size()
+        bs, N, K = mixture_w.size()
         if self.config.end_separation_mode: # end separation
-            original_sep= self.network(mixture_w)  # [M, N, K] -> [M, B, K]
+            original_sep= self.network(mixture_w)  # [2*M, N, K] -> [M, B, K]
             return original_sep
             score = self.mask_conv1x1(original_sep) # -> [M, N, K]
             score = score.view(M, self.C, N, K) # [M, C*N, K] -> [M, C, N, K]
