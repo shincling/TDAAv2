@@ -34,7 +34,7 @@ parser.add_argument('-gpus', default=[2,0,3], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
 # parser.add_argument('-restore', default='TDAAv3_PIT_30001.pt', type=str,
 # parser.add_argument('-restore', default='data/data/log/2020-02-24-08:02:28/Transformer_PIT_2ch_6001.pt', type=str,
-parser.add_argument('-restore', default='data/data/log/2020-02-26-13:45:07/Transformer_PIT_2ch_12001.pt', type=str,
+parser.add_argument('-restore', default='data/data/log/2020-02-26-13:45:07/Transformer_PIT_2ch_22001.pt', type=str,
 # parser.add_argument('-restore', default=None, type=str,
                     help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,

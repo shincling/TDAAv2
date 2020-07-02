@@ -172,6 +172,7 @@ class TransEncoder(nn.Module):
                  d_model=512, d_inner=2048, dropout=0.1, pe_maxlen=5000):
         super(TransEncoder, self).__init__()
         # parameters
+        dropout=config.trans_dropout
         self.config = config
         self.d_input = d_input
         self.n_layers = config.trans_n_layers

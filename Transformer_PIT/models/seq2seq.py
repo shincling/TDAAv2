@@ -48,6 +48,7 @@ class seq2seq(nn.Module):
         else:
             self.separation_linear=nn.Linear(self.encoder.d_model,2*speech_fre)
         self.speech_fre=speech_fre
+        self.dropout_layer = nn.Dropout(config.linear_dropout)
 
         # if config.use_tas:
         #     self.ss_model = models.ConvTasNet(config)
@@ -98,8 +99,10 @@ class seq2seq(nn.Module):
             tgt = tgt.transpose(0, 1) # convert to bs, output_len
             src = src.view(src.shape[0],src.shape[1],-1) # bs,T,F*2
             contexts, enc_attn_list = self.encoder(src, lengths.data.tolist(), return_attns=True)  # context是：（batch_size,max_len,hidden_size×2方向）这么大
+            contexts=self.dropout_layer(contexts)
             predicted_maps_real=self.separation_linear_real(contexts) #bs,T,F*2
             predicted_maps_imag=self.separation_linear_imag(contexts) #bs,T,F*2
+
             predicted_maps_real = predicted_maps_real.view(predicted_maps_real.size(0), predicted_maps_real.size(1),2,self.speech_fre) # bs,T,2,F
             predicted_maps_imag = predicted_maps_imag.view(predicted_maps_imag.size(0), predicted_maps_imag.size(1),2,self.speech_fre) # bs,T,2,F
             predicted_maps_real = self.uncompress(predicted_maps_real.transpose(1,2))
@@ -111,6 +114,7 @@ class seq2seq(nn.Module):
         if mix_wav is not None:
             mix_wav=mix_wav.transpose(0,1)
         contexts, enc_attn_list= self.encoder(src, lengths.data.tolist(),return_attns=True)  # context是：（batch_size,max_len,hidden_size×2方向）这么大
+        contexts = self.dropout_layer(contexts)
         if 0 and self.config.PSM:
             predicted_maps = F.relu(self.separation_linear(contexts)) #bs,T,2*F
         else:

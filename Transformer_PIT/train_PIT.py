@@ -316,7 +316,7 @@ def train(epoch):
 
             IRM=feas_tgt_tmp/(x_input_map_multi+1e-15)
 
-            angle_tgt=models.rank_feas(raw_tgt, train_data['multi_spk_angle_list']).view(siz[0],-1,siz[1],siz[2])
+            angle_tgt=models.rank_feas(raw_tgt, train_data['multi_spk_angle_list']).view(siz[0],-1,siz[1],siz[2]) # bs,topk,T,F
             angle_mix=Variable(torch.from_numpy(np.array(train_data['mix_angle']))).unsqueeze(1).expand(siz[0], topk_max, siz[1], siz[2]).contiguous()
             ang=np.cos(angle_mix-angle_tgt)
             ang=np.clip(ang,0,None)

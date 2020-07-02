@@ -32,9 +32,9 @@ parser.add_argument('-config', default='config_WSJ0.yaml', type=str,
 # parser.add_argument('-gpus', default=range(4), nargs='+', type=int,
 parser.add_argument('-gpus', default=[2,0,3], nargs='+', type=int,
                     help="Use CUDA on the listed devices.")
-# parser.add_argument('-restore', default='TDAAv3_PIT_30001.pt', type=str,
 # parser.add_argument('-restore', default='data/data/log/2020-02-24-08:02:28/Transformer_PIT_2ch_6001.pt', type=str,
-parser.add_argument('-restore', default='data/data/log/2020-02-26-13:45:07/Transformer_PIT_2ch_12001.pt', type=str,
+# parser.add_argument('-restore', default='data/data/log/2020-02-26-13:45:07/Transformer_PIT_2ch_12001.pt', type=str,
+parser.add_argument('-restore', default='Transformer_PIT_1ch_7001.pt', type=str,
 # parser.add_argument('-restore', default=None, type=str,
                     help="restore checkpoint")
 parser.add_argument('-seed', type=int, default=1234,
@@ -218,7 +218,7 @@ best_SDR = 0.0
 
 # train
 global_par_dict={
-    'title': str('Transformer PIT 2CH time loss '),
+    'title': str('Transformer PIT 1CH time loss '),
     'updates': updates,
     'batch_size': config.batch_size,
     'log path': str(log_path),
@@ -231,7 +231,8 @@ global_par_dict={
     'trans_d_model': config.trans_d_model,
     'trans_d_inner': config.trans_d_inner,
     'trans_dropout': config.trans_dropout,
-    '2channel':config.is_two_channel,
+    '2-channel':config.is_two_channel,
+    '1-channel': config.is_one_channel,
 }
 lera.log_hyperparams(global_par_dict)
 for item in list(global_par_dict.keys()):
@@ -279,7 +280,9 @@ def train(epoch):
             print(('SDRi_aver_epoch:', SDRi_SUM.mean()))
             break  # 如果这个epoch的生成器没有数据了，直接进入下一个epoch
 
-        src = Variable(torch.from_numpy(train_data['mix_complex_two_channel'])) # bs,T,F,2 both real and imag values
+        src = Variable(torch.from_numpy(train_data['mix_feas']))
+        # raw_tgt = [spk.keys() for spk in train_data['multi_spk_fea_list']]
+        # raw_tgt = [sorted(spk.keys()) for spk in train_data['multi_spk_fea_list']]
         raw_tgt=train_data['batch_order']
         feas_tgt = models.rank_feas(raw_tgt, train_data['multi_spk_wav_list'])  # 这里是目标的图谱,bs*Topk,time_len
 
@@ -313,19 +316,62 @@ def train(epoch):
         if config.use_center_loss:
             center_loss.zero_grad()
 
-        multi_mask_real,multi_mask_imag, enc_attn_list = model(src, src_len, tgt, tgt_len,
-                                             dict_spk2idx)  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
-        multi_mask_real=multi_mask_real.transpose(0,1)
-        multi_mask_imag=multi_mask_imag.transpose(0,1)
-        src_real=src[:,:,:,0].transpose(0,1) # bs,T,F
-        src_imag=src[:,:,:,1].transpose(0,1) # bs,T,F
-        print('mask size for real/imag:', multi_mask_real.size()) # bs,topk,T,F, 已经压缩过了
-        print('mixture size for real/imag:', src_real.size()) # bs,T,F
+        multi_mask, enc_attn_list = model(src, src_len, tgt, tgt_len,
+                                          dict_spk2idx)  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
+        multi_mask = multi_mask.transpose(0,1)
+        print('mask size:', multi_mask.size()) # bs,topk,T,F
 
-        predicted_maps0_real=multi_mask_real[:,0]*src_real - multi_mask_imag[:,0]*src_imag #bs,T,F
-        predicted_maps0_imag=multi_mask_real[:,0]*src_imag + multi_mask_imag[:,0]*src_real #bs,T,F
-        predicted_maps1_real=multi_mask_real[:,1]*src_real - multi_mask_imag[:,1]*src_imag #bs,T,F
-        predicted_maps1_imag=multi_mask_real[:,1]*src_imag + multi_mask_imag[:,1]*src_real #bs,T,F
+        predicted_maps0_spectrogram=multi_mask[:,0]* src.transpose(0,1) #bs,T,F
+        predicted_maps1_spectrogram=multi_mask[:,1]* src.transpose(0,1) #bs,T,F
+
+        if True: # Analyze the optimal assignments
+            predicted_spectrogram=torch.cat([predicted_maps0_spectrogram.unsqueeze(1),predicted_maps1_spectrogram.unsqueeze(1)],1)
+            feas_tgt_tmp = models.rank_feas(raw_tgt, train_data['multi_spk_fea_list'])  # 这里是目标的图谱,bs*Topk,len,fre
+            src = src.transpose(0,1)
+            siz = src.size()  # bs,T,F
+            assert len(siz) == 3
+            # topk_max = config.MAX_MIX  # 最多可能的topk个数
+            topk_max = 2  # 最多可能的topk个数
+            x_input_map_multi = torch.unsqueeze(src, 1).expand(siz[0], topk_max, siz[1], siz[2]).contiguous()  # bs,topk,T,F
+            feas_tgt_tmp = feas_tgt_tmp.view(siz[0], -1, siz[1], siz[2])
+
+
+            angle_tgt=models.rank_feas(raw_tgt, train_data['multi_spk_angle_list']).view(siz[0],-1,siz[1],siz[2]) # bs,topk,T,F
+            angle_mix=Variable(torch.from_numpy(np.array(train_data['mix_angle']))).unsqueeze(1).expand(siz[0], topk_max, siz[1], siz[2]).contiguous()
+            ang=np.cos(angle_mix-angle_tgt)
+            ang=np.clip(ang,0,None)
+
+            feas_tgt_tmp = feas_tgt_tmp.view(siz[0],-1,siz[1],siz[2])*ang # bs,topk,T,F
+            feas_tgt_tmp = feas_tgt_tmp.cuda()
+            del x_input_map_multi
+            src = src.transpose(0,1)
+            MSE_func=nn.MSELoss().cuda()
+            best_perms_this_batch = []
+            for bs_idx in range(siz[0]):
+                best_perms_this_sample = []
+                for tt in range(siz[1]):  # 对每一帧
+                    tar= feas_tgt_tmp[bs_idx,:,tt] #topk,F
+                    est= predicted_spectrogram[bs_idx,:,tt] #topk,F
+                    best_loss_mse_this_batch = -1
+                    for idx, per in enumerate([[0, 1], [1, 0]]):
+                        if idx == 0:
+                            best_loss_mse_this_batch = MSE_func(est[per], tar)
+                            perm_this_frame = per
+                        else:
+                            loss =MSE_func(est[per], tar)
+                            if loss <= best_loss_mse_this_batch:
+                                best_loss_mse_this_batch = loss
+                                perm_this_frame = per
+                    best_perms_this_sample.append(perm_this_frame)
+                best_perms_this_batch.append( best_perms_this_sample)
+            print(np.array(best_perms_this_batch).sum(1)/751)
+
+        _mix_spec = train_data['mix_phase'] # bs,T,F,2
+        angle_mix = np.angle(_mix_spec)
+        predicted_maps0_real = predicted_maps0_spectrogram * torch.from_numpy(np.cos(angle_mix)).cuda() # e(ix) = cosx + isin x
+        predicted_maps0_imag = predicted_maps0_spectrogram * torch.from_numpy(np.sin(angle_mix)).cuda() # e(ix) = cosx + isin x
+        predicted_maps1_real = predicted_maps1_spectrogram * torch.from_numpy(np.cos(angle_mix)).cuda() # e(ix) = cosx + isin x
+        predicted_maps1_imag = predicted_maps1_spectrogram * torch.from_numpy(np.sin(angle_mix)).cuda() # e(ix) = cosx + isin x
 
         stft_matrix_spk0=torch.cat((predicted_maps0_real.unsqueeze(-1),predicted_maps0_imag.unsqueeze(-1)),3).transpose(1,2) # bs,F,T,2
         stft_matrix_spk1=torch.cat((predicted_maps1_real.unsqueeze(-1),predicted_maps1_imag.unsqueeze(-1)),3).transpose(1,2) # bs,F,T,2
@@ -398,7 +444,7 @@ def train(epoch):
         # continue
 
         if 1 and updates % config.save_interval == 1:
-            save_model(log_path + 'Transformer_PIT_2ch_{}.pt'.format(updates))
+            save_model(log_path + 'Transformer_PIT_1ch_{}.pt'.format(updates))
 
         if 0 and updates>0 and updates % config.eval_interval == 3 : #建议至少跑几个epoch再进行测试，否则模型还没学到东西，会有很多问题。
             logging("time: %6.3f, epoch: %3d, updates: %8d, train loss: %6.5f\n"
@@ -415,7 +461,7 @@ def train(epoch):
 
 
 
-def eval(epoch,test_or_valid='valid'):
+def eval(epoch,test_or_valid='train'):
     # config.batch_size=1
     global updates,model
     model.eval()
@@ -436,7 +482,10 @@ def eval(epoch,test_or_valid='valid'):
             print(('SDR_aver_eval_epoch:', SDR_SUM.mean()))
             print(('SDRi_aver_eval_epoch:', SDRi_SUM.mean()))
             break  # 如果这个epoch的生成器没有数据了，直接进入下一个epoch
-        src = Variable(torch.from_numpy(eval_data['mix_complex_two_channel'])) # bs,T,F,2 both real and imag values
+
+        src = Variable(torch.from_numpy(eval_data['mix_feas']))
+        # raw_tgt = [spk.keys() for spk in eval_data['multi_spk_fea_list']]
+        # raw_tgt = [sorted(spk.keys()) for spk in eval_data['multi_spk_fea_list']]
         raw_tgt=eval_data['batch_order']
         feas_tgt = models.rank_feas(raw_tgt, eval_data['multi_spk_wav_list'])  # 这里是目标的图谱,bs*Topk,time_len
 
@@ -450,8 +499,11 @@ def eval(epoch,test_or_valid='valid'):
         padded_source = padded_source.cuda()
 
         # 要保证底下这几个都是longTensor(长整数）
+        tgt_max_len = config.MAX_MIX + 2  # with bos and eos.
+        # tgt = Variable(torch.from_numpy(np.array(
+        #     [[0] + [dict_spk2idx[spk] for spk in spks] + (tgt_max_len - len(spks) - 1) * [dict_spk2idx['<EOS>']] for
+        #      spks in raw_tgt], dtype=np.int))).transpose(0, 1)  # 转换成数字，然后前后加开始和结束符号。
         tgt = Variable(torch.from_numpy(np.array([[0,1,2,102] for __ in range(config.batch_size)], dtype=np.int))).transpose(0, 1)  # 转换成数字，然后前后加开始和结束符号。
-
         src_len = Variable(torch.LongTensor(config.batch_size).zero_() + mix_speech_len).unsqueeze(0)
         tgt_len = Variable(
             torch.LongTensor([len(one_spk) for one_spk in eval_data['multi_spk_fea_list']])).unsqueeze(0)
@@ -467,19 +519,70 @@ def eval(epoch,test_or_valid='valid'):
         if config.use_center_loss:
             center_loss.zero_grad()
 
-        multi_mask_real,multi_mask_imag, enc_attn_list = model(src, src_len, tgt, tgt_len,
-                                                               dict_spk2idx)  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
-        multi_mask_real=multi_mask_real.transpose(0,1)
-        multi_mask_imag=multi_mask_imag.transpose(0,1)
-        src_real=src[:,:,:,0].transpose(0,1) # bs,T,F
-        src_imag=src[:,:,:,1].transpose(0,1) # bs,T,F
-        print('mask size for real/imag:', multi_mask_real.size()) # bs,topk,T,F, 已经压缩过了
-        print('mixture size for real/imag:', src_real.size()) # bs,T,F
+        multi_mask, enc_attn_list = model(src, src_len, tgt, tgt_len,
+                                          dict_spk2idx)  # 这里的outputs就是hidden_outputs，还没有进行最后分类的隐层，可以直接用
+        multi_mask = multi_mask.transpose(0,1)
+        print('mask size:', multi_mask.size()) # bs,topk,T,F
 
-        predicted_maps0_real=multi_mask_real[:,0]*src_real - multi_mask_imag[:,0]*src_imag #bs,T,F
-        predicted_maps0_imag=multi_mask_real[:,0]*src_imag + multi_mask_imag[:,0]*src_real #bs,T,F
-        predicted_maps1_real=multi_mask_real[:,1]*src_real - multi_mask_imag[:,1]*src_imag #bs,T,F
-        predicted_maps1_imag=multi_mask_real[:,1]*src_imag + multi_mask_imag[:,1]*src_real #bs,T,F
+        predicted_maps0_spectrogram=multi_mask[:,0]* src.transpose(0,1) #bs,T,F
+        predicted_maps1_spectrogram=multi_mask[:,1]* src.transpose(0,1) #bs,T,F
+
+        if True: # Analyze the optimal assignments
+            predicted_spectrogram=torch.cat([predicted_maps0_spectrogram.unsqueeze(1),predicted_maps1_spectrogram.unsqueeze(1)],1)
+            feas_tgt_tmp = models.rank_feas(raw_tgt, eval_data['multi_spk_fea_list'])  # 这里是目标的图谱,bs*Topk,len,fre
+            src = src.transpose(0,1)
+            siz = src.size()  # bs,T,F
+            assert len(siz) == 3
+            # topk_max = config.MAX_MIX  # 最多可能的topk个数
+            topk_max = 2  # 最多可能的topk个数
+            x_input_map_multi = torch.unsqueeze(src, 1).expand(siz[0], topk_max, siz[1], siz[2]).contiguous()  # bs,topk,T,F
+            feas_tgt_tmp = feas_tgt_tmp.view(siz[0], -1, siz[1], siz[2])
+
+
+            angle_tgt=models.rank_feas(raw_tgt,eval_data['multi_spk_angle_list']).view(siz[0],-1,siz[1],siz[2]) # bs,topk,T,F
+            angle_mix=Variable(torch.from_numpy(np.array(eval_data['mix_angle']))).unsqueeze(1).expand(siz[0], topk_max, siz[1], siz[2]).contiguous()
+            ang=np.cos(angle_mix-angle_tgt)
+            ang=np.clip(ang,0,None)
+
+            feas_tgt_tmp = feas_tgt_tmp.view(siz[0],-1,siz[1],siz[2])*ang # bs,topk,T,F
+            feas_tgt_tmp = feas_tgt_tmp.cuda()
+            del x_input_map_multi
+            src = src.transpose(0,1)
+            MSE_func=nn.MSELoss().cuda()
+            best_perms_this_batch = []
+            for bs_idx in range(siz[0]):
+                best_perms_this_sample = []
+                for tt in range(siz[1]):  # 对每一帧
+                    tar= feas_tgt_tmp[bs_idx,:,tt] #topk,F
+                    est= predicted_spectrogram[bs_idx,:,tt] #topk,F
+                    best_loss_mse_this_batch = -1
+                    for idx, per in enumerate([[0, 1], [1, 0]]):
+                        if idx == 0:
+                            best_loss_mse_this_batch = MSE_func(est[per], tar)
+                            perm_this_frame = per
+                            predicted_spectrogram[bs_idx, :, tt]=est[per]
+                        else:
+                            loss =MSE_func(est[per], tar)
+                            if loss <= best_loss_mse_this_batch:
+                                best_loss_mse_this_batch = loss
+                                perm_this_frame = per
+                                predicted_spectrogram[bs_idx, :, tt]=est[per]
+
+
+                    best_perms_this_sample.append(perm_this_frame)
+                best_perms_this_batch.append( best_perms_this_sample)
+            print('different assignment ratio:', np.mean(np.min(np.array(best_perms_this_batch).sum(1)/751,1)))
+            # predicted_maps0_spectrogram = predicted_spectrogram[:,0]
+            # predicted_maps1_spectrogram = predicted_spectrogram[:,1]
+
+
+
+        _mix_spec = eval_data['mix_phase'] # bs,T,F,2
+        angle_mix = np.angle(_mix_spec)
+        predicted_maps0_real = predicted_maps0_spectrogram * torch.from_numpy(np.cos(angle_mix)).cuda() # e(ix) = cosx + isin x
+        predicted_maps0_imag = predicted_maps0_spectrogram * torch.from_numpy(np.sin(angle_mix)).cuda() # e(ix) = cosx + isin x
+        predicted_maps1_real = predicted_maps1_spectrogram * torch.from_numpy(np.cos(angle_mix)).cuda() # e(ix) = cosx + isin x
+        predicted_maps1_imag = predicted_maps1_spectrogram * torch.from_numpy(np.sin(angle_mix)).cuda() # e(ix) = cosx + isin x
 
         stft_matrix_spk0=torch.cat((predicted_maps0_real.unsqueeze(-1),predicted_maps0_imag.unsqueeze(-1)),3).transpose(1,2) # bs,F,T,2
         stft_matrix_spk1=torch.cat((predicted_maps1_real.unsqueeze(-1),predicted_maps1_imag.unsqueeze(-1)),3).transpose(1,2) # bs,F,T,2

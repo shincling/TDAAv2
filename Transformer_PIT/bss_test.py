@@ -136,7 +136,7 @@ def cal(path,tmp=None):
         # result_sdri=cal_SDRi(aim_speech_channel,pre_speech_channel,mix_speech)
         # print 'SDRi:',result_sdri
         result_sdri=cal_SISNRi(aim_speech_channel,pre_speech_channel[result[-1]],mix_speech)
-        print(('SI-SNR',result))
+        print(('SI-SNR',result_sdri))
         # for ii in range(aim_speech_channel.shape[0]):
         #     result=cal_SISNRi(aim_speech_channel[ii],pre_speech_channel[ii],mix_speech[ii])
         #     print('SI-SNR',result)
